@@ -12,7 +12,6 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from whisper2obsidian.config import settings
 from whisper2obsidian.state import W2OState
 
 logger = logging.getLogger(__name__)

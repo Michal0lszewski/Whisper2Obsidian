@@ -18,9 +18,9 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Generator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Generator
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class VaultIndex:
     # ── Write ────────────────────────────────────────────────────────────────
 
     def upsert_note(self, stem: str, title: str, path: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO notes (stem, title, path, updated_at) VALUES (?,?,?,?)",
@@ -138,7 +138,7 @@ class VaultIndex:
         with self._connect() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO notes (stem, title, path, updated_at) VALUES (?,?,?,?)",
-                (stem, stem, "", datetime.now(timezone.utc).isoformat()),
+                (stem, stem, "", datetime.now(UTC).isoformat()),
             )
 
     def is_processed(self, stem: str) -> bool:

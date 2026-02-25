@@ -18,8 +18,8 @@ import textwrap
 from typing import Any
 
 import tiktoken
-from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
 
 from whisper2obsidian.config import settings
 from whisper2obsidian.services.groq_rate_limiter import GroqRateLimiter
@@ -154,7 +154,9 @@ async def _analyse_single(
         [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_content)]
     )
     raw = resp.content.strip()
-    actual_tokens = resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
+    actual_tokens = (
+        resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
+    )
     _rate_limiter.record_usage(actual_tokens)
 
     return _safe_json(raw), actual_tokens
@@ -179,7 +181,11 @@ async def _analyse_chunked(
         resp = await llm.ainvoke(
             [SystemMessage(content=_CHUNK_SYSTEM_PROMPT), HumanMessage(content=chunk)]
         )
-        actual = resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
+        actual = (
+            resp.usage_metadata.get("total_tokens", estimated)
+            if resp.usage_metadata
+            else estimated
+        )
         _rate_limiter.record_usage(actual)
         total_tokens += actual
         summaries.append(resp.content.strip())
@@ -193,7 +199,9 @@ async def _analyse_chunked(
     resp = await llm.ainvoke(
         [SystemMessage(content=_SYNTHESIS_PROMPT), HumanMessage(content=synth_user)]
     )
-    actual = resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
+    actual = (
+        resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
+    )
     _rate_limiter.record_usage(actual)
     total_tokens += actual
 

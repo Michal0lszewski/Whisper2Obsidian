@@ -6,7 +6,7 @@ and updates the SQLite vault index.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from whisper2obsidian.config import settings
@@ -25,7 +25,7 @@ def file_writer_node(state: W2OState) -> W2OState:
     note_filename = state.get("note_filename", "untitled")
     audio_path = state.get("audio_path", "")
     analysis = state.get("analysis", {})
-    metadata = state.get("metadata", {})
+    state.get("metadata", {})
 
     if not note_markdown:
         return {**state, "errors": ["file_writer_node: note_markdown is empty"]}
@@ -35,10 +35,10 @@ def file_writer_node(state: W2OState) -> W2OState:
     inbox.mkdir(parents=True, exist_ok=True)
 
     # Avoid collisions – append date if file already exists
-    date_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_prefix = datetime.now(UTC).strftime("%Y-%m-%d")
     candidate = inbox / f"{date_prefix}-{note_filename}.md"
     if candidate.exists():
-        ts = datetime.now(timezone.utc).strftime("%H%M%S")
+        ts = datetime.now(UTC).strftime("%H%M%S")
         candidate = inbox / f"{date_prefix}-{note_filename}-{ts}.md"
 
     candidate.write_text(note_markdown, encoding="utf-8")

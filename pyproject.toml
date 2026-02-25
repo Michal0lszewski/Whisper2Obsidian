@@ -39,6 +39,7 @@ dev = [
 [project.scripts]
 whisper2obsidian = "whisper2obsidian.main:main"
 w2o-harvest = "whisper2obsidian.scripts.vault_harvest:main"
+w2o-wipe = "whisper2obsidian.scripts.wipe_db:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/whisper2obsidian"]

@@ -47,8 +47,8 @@ structured Obsidian notes. Analyse the transcript and return ONLY valid JSON
   "summary": "2-3 sentence summary",
   "key_points": ["point 1", "point 2"],
   "action_items": ["action 1"],
-  "tags": ["tag1", "tag2"],
-  "suggested_links": ["existing-note-stem-1"],
+  "tags": [],
+  "suggested_links": [],
   "category_override": null,
   "mermaid_diagram": null,
   "dataview_fields": {}
@@ -56,8 +56,9 @@ structured Obsidian notes. Analyse the transcript and return ONLY valid JSON
 
 Rules:
 - PERSPECTIVE: Write ALL text in the FIRST-PERSON ("I need to", "My idea is") as if YOU dictated this memo. NEVER use third-person ("The user wants", "The speaker").
-- tags: lowercase, hyphen-separated. Use existing_tags ONLY if undeniably relevant to the transcript topic. Do NOT force unrelated tags.
-- suggested_links: choose from existing_links ONLY if directly related. Do NOT link unrelated notes just because they exist.
+- tags: MUST BE AN EMPTY ARRAY `[]` unless the transcript explicitly discusses the exact subject. Do NOT invent abstract connections.
+- suggested_links: MUST BE AN EMPTY ARRAY `[]` unless directly, undeniably related.
+- EXPLICIT SPOKEN INSTRUCTIONS: I will often dictate metadata commands at the end of the memo (e.g. "Tag this with CSF", "Link to NotebookLM"). You MUST obey these instructions! If I dictate a tag or link, add it to the arrays, and exclude the command from the final text summary.
 - mermaid_diagram: provide a Mermaid flowchart string ONLY for process/workflow memos, else null.
 - category_override: ONLY use one of these exact values if the transcript clearly belongs
   to a different category than the metadata claims, else null:
@@ -78,7 +79,7 @@ Use the same JSON schema as before:
  category_override, mermaid_diagram, dataview_fields}
 
 Strictly maintain FIRST-PERSON ("I", "my") perspective.
-Only use existing tags and links if they are undeniably relevant to the content.
+tags and suggested_links MUST BE AN EMPTY ARRAY `[]` unless they are undeniably, explicitly the core subject of the transcript. Do NOT invent connections.
 """).strip()
 
 

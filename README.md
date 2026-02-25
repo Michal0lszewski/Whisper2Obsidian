@@ -29,6 +29,33 @@ iPhone Voice Record Pro → .m4a + .meta.txt sidecar (Google Drive)
 [file_writer_node]       – writes .md to vault inbox, updates SQLite index
 ```
 
+## Architecture & LangGraph Flow
+
+![LangGraph Architecture](docs/langgraph_architecture.png)
+
+Whisper2Obsidian is built on [LangGraph](https://python.langchain.com/docs/langgraph), treating the transcription and analysis pipeline as a state-machine diagram. As the system moves from node to node, it updates a shared typed Python dictionary (`W2OState`).
+
+### 1. State (`state.py`)
+The pipeline revolves around `W2OState`. It holds everything from initial audio path to the final rendered markdown. Key keys:
+- **Watcher Phase:** `audio_path`, `metadata` (parsed sidecar), `already_processed` (database index list), `transcript_cached`
+- **Transcription Phase:** `transcript`, `language`, `transcript_token_count`
+- **Analysis Phase:** `analysis` (structured Pydantic object from Groq), `groq_tokens_used`
+- **Output Phase:** `note_markdown`, `note_filename`, `note_path`
+- **Error Handling:** `errors` (list of strings appended by any node)
+
+### 2. Edges & Routing (`graph.py`)
+- **START → watcher_node:** The entry point.
+- **Conditional Routing:** The watcher checks if there's actually a new `.m4a`. The `has_new_memo` conditional edge function routes to the `transcription_node` if true, or aborts straight to the `END` state if no new audio is found.
+- **Linear Pipeline:** Once past the conditional edge, the graph is purely linear: `transcription_node` → `vault_indexer_node` → `analysis_node` → `note_writer_node` → `file_writer_node` → `END`.
+
+### 3. The Nodes
+1. **watcher_node:** Scans `AUDIO_FOLDER` for `.m4a` files. Checks both the SQLite cache and the Obsidian inbox filesystem for existing processing markers. Parses `.meta.txt` VRP metadata. Checks for existing `.txt` transcripts to set the `transcript_cached` boolean flag.
+2. **transcription_node:** If `transcript_cached` is true, it loads the text directly from the disk. Otherwise, calls `mlx-whisper` on Apple Silicon. Saves the result to a `.txt` and `.json` sidecar to prevent future Whisper calls if the Groq API fails later in the chain.
+3. **vault_indexer_node:** Reads the SQLite index database to inject existing Obsidian vault tags and link paths into the state context, enabling the LLM to connect the new memo to your exact existing knowledge graph.
+4. **analysis_node:** Connects to Groq (`llama-3.3-70b-versatile`). Protected by the `GroqRateLimiter` service (RPM/TPM/RPD sliding windows). Yields a structured JSON response (title, summary, bullet points, suggested links).
+5. **note_writer_node:** Selects a `.j2` Jinja template based on the VRP `Category` (resolves mapping using `CATEGORY_MAP`). Renders the final Markdown note.
+6. **file_writer_node:** Writes the final `.md` file to the vault inbox. Uses the exact VRP `Creation Date` to prefix the filename (e.g., `2026-02-25-health.md`). Marks the file as "processed" in SQLite and adds the new tags/links back into the DB index.
+
 ---
 
 ## Requirements

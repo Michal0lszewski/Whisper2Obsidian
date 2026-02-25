@@ -129,10 +129,12 @@ def transcription_node(state: W2OState) -> W2OState:
         logger.warning("Cannot write transcript cache (%s): %s", txt_path, exc)
 
     try:
+        sidecar_metadata = state.get("metadata", {})
         meta = {
             "language": language,
             "token_count": token_count,
             "detected_at": datetime.now(UTC).isoformat(),
+            "vrp_recording_date": sidecar_metadata.get("date", ""),
             "audio_file": Path(audio_path).name,
         }
         json_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")

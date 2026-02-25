@@ -10,18 +10,21 @@
 ## Overview
 
 ```
-iPhone Voice Record Pro → .m4a + metadata sidecar (Google Drive)
+iPhone Voice Record Pro → .m4a + .meta.txt sidecar (Google Drive)
         ↓
-[watcher_node]           – detects new files by mtime, skips already-processed
+[watcher_node]           – detects new files by mtime
+                           skips if .md note already in vault inbox
+                           signals transcript_cached=True if <stem>.txt exists
         ↓
-[transcription_node]     – mlx-whisper large-v3-turbo (Neural Engine + Metal GPU)
+[transcription_node]     – loads <stem>.txt from disk  OR  runs mlx-whisper
+                           writes <stem>.txt + <stem>.json after fresh transcription
         ↓
 [vault_indexer_node]     – loads existing tags & links from SQLite vault index
         ↓
 [analysis_node]          – Groq Llama-3.3-70b analysis → structured JSON
                            (rate-limited: RPM / TPM / RPD guards)
         ↓
-[note_writer_node]       – Jinja2 template (by category) → Obsidian Markdown
+[note_writer_node]       – Jinja2 template (selected by category) → Obsidian Markdown
         ↓
 [file_writer_node]       – writes .md to vault inbox, updates SQLite index
 ```
@@ -85,22 +88,72 @@ whisper2obsidian --show-rate-usage   # show Groq token/request counters
 
 ---
 
+## Voice Record Pro Metadata
+
+The pipeline reads the companion `.meta.txt` file that Voice Record Pro (≥ 4.x)
+writes alongside each recording. Fields extracted:
+
+| Meta field | Used for |
+|---|---|
+| `Category` | Selects the Jinja2 note template (case-insensitive) |
+| `Creation Date` | Sets the `date` frontmatter field in the note |
+| `Duration` | Sets `duration` frontmatter field (`MM:SS` / `HH:MM:SS`) |
+| `Title` | Default note title before LLM refines it |
+
+---
+
 ## Note Templates (by category)
 
-Voice Record Pro category → Jinja2 template:
+Voice Record Pro category → Jinja2 template (case-insensitive, aliases supported):
 
-| Category | Template | Features |
+| VRP Category | Template | Note style |
 |---|---|---|
-| `meeting` | `meeting.md.j2` | Action items, decisions, IMPORTANT callout |
-| `idea` | `idea.md.j2` | Markmind `markmap` codeblock, TIP callout |
-| `research` / `lecture` | `research.md.j2` | Concept markmap, status Dataview field |
-| _any other_ | `default.md.j2` | Key points, action items, NOTE callout |
+| `books` / `book` / `reading` | `books.md.j2` 📚 | Key takeaways, markmap, status: reading |
+| `course` / `lecture` / `class` | `course.md.j2` 🎓 | Key concepts, follow-up tasks, status: review |
+| `generic` / `general` / `note` | `default.md.j2` | Key points, action items, NOTE callout |
+| `ideas` / `idea` / `brainstorm` | `idea.md.j2` 💡 | Markmap mind-map, TIP callout, status: explore |
+| `meeting` / `meetings` | `meeting.md.j2` 📋 | Decisions, action items, IMPORTANT callout |
+| `podcast` / `podcasts` | `podcast.md.j2` 🎙️ | Episode insights, follow-ups, status: inbox |
+| `research` | `research.md.j2` 🔬 | Concept markmap, findings, status: reading |
+| `shopping` / `grocery` | `shopping.md.j2` 🛒 | Checkbox list, context notes, status: open |
+| `todo` / `task` / `reminder` | `todo.md.j2` ✅ | Tasks as checkboxes, context, status: open |
 
 All templates include:
-- YAML frontmatter with `tags`, `date`, `category`, Dataview inline fields
-- `[[wiki-links]]` to related notes
+- YAML frontmatter with `tags`, `date`, `duration`, `category`, Dataview inline fields
+- `[[wiki-links]]` to related notes suggested by the LLM
 - Optional Mermaid diagram block
-- Collapsible raw transcript
+- Collapsible raw transcript callout
+
+---
+
+## Transcript Caching
+
+After Whisper transcribes an audio file, two sidecar files are written **next to the audio**:
+
+```
+20260225-094601.m4a        ← original recording
+20260225-094601.meta.txt   ← Voice Record Pro metadata
+20260225-094601.txt        ← plain-text transcript  ← NEW
+20260225-094601.json       ← language, token_count, timestamp  ← NEW
+```
+
+**On retry runs** (e.g. if Groq was unreachable the first time):
+- The watcher detects no `.md` in the vault inbox → file is not yet fully done
+- `transcript_cached=True` is set in state because `.txt` exists
+- `transcription_node` loads the `.txt` directly — **Whisper is not re-run**
+- Only the Groq analysis call is repeated
+
+To force a fresh transcription, delete the `.txt` file.
+
+---
+
+## "Already processed" logic
+
+A file is considered **done** if **either** condition is true:
+1. Its stem is recorded in the SQLite database (`data/w2o.db`) — set by `file_writer_node`
+2. A `.md` note whose filename contains the audio stem exists in the vault inbox — filesystem check
+
+The dual check makes the system robust against DB resets and manual vault edits.
 
 ---
 
@@ -109,7 +162,7 @@ All templates include:
 | Plugin | Usage |
 |---|---|
 | **Dataview** | Frontmatter + inline `key:: value` fields |
-| **Markmind / Markmap** | Mind-map codeblocks in idea/research notes |
+| **Markmind / Markmap** | Mind-map codeblocks in books/idea/course/research notes |
 | **Mermaid** | Flowchart diagrams (built into Obsidian) |
 
 ---
@@ -149,21 +202,26 @@ src/whisper2obsidian/
 ├── graph.py               # compile_graph()
 ├── main.py                # CLI entry point
 ├── nodes/
-│   ├── watcher.py
-│   ├── transcription.py
+│   ├── watcher.py         # file detection + MD-existence check
+│   ├── transcription.py   # Whisper + .txt/.json cache
 │   ├── vault_indexer.py
-│   ├── analysis.py
-│   ├── note_writer.py
-│   └── file_writer.py
+│   ├── analysis.py        # Groq LLM analysis (rate-limited)
+│   ├── note_writer.py     # Jinja2 template rendering
+│   └── file_writer.py     # vault write + SQLite update
 ├── services/
 │   ├── groq_rate_limiter.py
-│   ├── metadata_parser.py
+│   ├── metadata_parser.py # .meta.txt / .json / .xml sidecar parser
 │   └── vault_index.py
 ├── scripts/
 │   └── vault_harvest.py
 └── templates/
     ├── default.md.j2
-    ├── meeting.md.j2
+    ├── books.md.j2
+    ├── course.md.j2
     ├── idea.md.j2
-    └── research.md.j2
+    ├── meeting.md.j2
+    ├── podcast.md.j2
+    ├── research.md.j2
+    ├── shopping.md.j2
+    └── todo.md.j2
 ```

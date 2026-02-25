@@ -55,9 +55,9 @@ structured Obsidian notes. Analyse the transcript and return ONLY valid JSON
 }
 
 Rules:
-- tags: lowercase, hyphen-separated. Prefer tags from the provided existing_tags list,
-  only introduce new tags if genuinely needed.
-- suggested_links: choose ONLY from the provided existing_links stems.
+- PERSPECTIVE: Write ALL text in the FIRST-PERSON ("I need to", "My idea is") as if YOU dictated this memo. NEVER use third-person ("The user wants", "The speaker").
+- tags: lowercase, hyphen-separated. Use existing_tags ONLY if undeniably relevant to the transcript topic. Do NOT force unrelated tags.
+- suggested_links: choose from existing_links ONLY if directly related. Do NOT link unrelated notes just because they exist.
 - mermaid_diagram: provide a Mermaid flowchart string ONLY for process/workflow memos, else null.
 - category_override: ONLY use one of these exact values if the transcript clearly belongs
   to a different category than the metadata claims, else null:
@@ -68,7 +68,7 @@ Rules:
 _CHUNK_SYSTEM_PROMPT = textwrap.dedent("""
 You are summarising a chunk of a longer voice memo transcript.
 Return ONLY a plain text summary of the key points in this chunk (no JSON).
-Be concise but preserve all important facts, names, and action items.
+Be concise, preserve all important facts/names, and strictly use FIRST-PERSON ("I", "my") perspective.
 """).strip()
 
 _SYNTHESIS_PROMPT = textwrap.dedent("""
@@ -76,6 +76,9 @@ You are combining chunk summaries of a voice memo into a final structured analys
 Use the same JSON schema as before:
 {title, summary, key_points, action_items, tags, suggested_links,
  category_override, mermaid_diagram, dataview_fields}
+
+Strictly maintain FIRST-PERSON ("I", "my") perspective.
+Only use existing tags and links if they are undeniably relevant to the content.
 """).strip()
 
 

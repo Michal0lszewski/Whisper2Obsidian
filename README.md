@@ -132,13 +132,13 @@ Voice Record Pro category → Jinja2 template (case-insensitive, aliases support
 
 | VRP Category | Template | Note style |
 |---|---|---|
-| `books` / `book` / `reading` | `books.md.j2` 📚 | Key takeaways, markmap, status: reading |
+| `books` / `book` / `reading` | `books.md.j2` 📚 | Key takeaways, markmind, status: reading |
 | `course` / `lecture` / `class` | `course.md.j2` 🎓 | Key concepts, follow-up tasks, status: review |
 | `generic` / `general` / `note` | `default.md.j2` | Key points, action items, NOTE callout |
-| `ideas` / `idea` / `brainstorm` | `idea.md.j2` 💡 | Markmap mind-map, TIP callout, status: explore |
+| `ideas` / `idea` / `brainstorm` | `idea.md.j2` 💡 | Markmind mind-map, TIP callout, status: explore |
 | `meeting` / `meetings` | `meeting.md.j2` 📋 | Decisions, action items, IMPORTANT callout |
 | `podcast` / `podcasts` | `podcast.md.j2` 🎙️ | Episode insights, follow-ups, status: inbox |
-| `research` | `research.md.j2` 🔬 | Concept markmap, findings, status: reading |
+| `research` | `research.md.j2` 🔬 | Concept markmind, findings, status: reading |
 | `shopping` / `grocery` | `shopping.md.j2` 🛒 | Checkbox list, context notes, status: open |
 | `todo` / `task` / `reminder` | `todo.md.j2` ✅ | Tasks as checkboxes, context, status: open |
 
@@ -198,7 +198,7 @@ This utility script securely deletes all tracking records (tags, links, and note
 | Plugin | Usage |
 |---|---|
 | **Dataview** | Frontmatter + inline `key:: value` fields |
-| **Markmind / Markmap** | Mind-map codeblocks in books/idea/course/research notes |
+| **Markmind** | Mind-map codeblocks in books/idea/course/research notes |
 | **Mermaid** | Flowchart diagrams (built into Obsidian) |
 
 ---

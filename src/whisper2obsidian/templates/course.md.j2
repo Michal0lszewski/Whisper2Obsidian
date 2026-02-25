@@ -29,7 +29,7 @@ status:: review
 
 ## Concept Map
 
-```markmap
+```markmind
 # {{ title }}
 {% for point in key_points %}## {{ point }}
 {% endfor %}{% for link in suggested_links %}## [[{{ link }}]]
@@ -52,9 +52,5 @@ status:: review
 
 ---
 
-> [!TIP] Raw Transcript
-> <details><summary>Click to expand</summary>
->
+> [!quote]- Raw Transcript
 > {{ transcript | replace('\n', '\n> ') }}
->
-> </details>

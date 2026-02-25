@@ -104,8 +104,13 @@ def parse_metadata(audio_path: str | Path) -> dict[str, Any]:
     # 1. Try JSON sidecar
     json_path = audio.with_suffix(".json")
     if json_path.exists():
-        meta = _parse_json(json_path)
-        logger.debug("Loaded JSON sidecar: %s", json_path)
+        tmp_meta = _parse_json(json_path)
+        # Avoid treating our own old transcript cache as a Voice Record Pro sidecar
+        if "detected_at" not in tmp_meta and "audio_file" not in tmp_meta:
+            meta = tmp_meta
+            logger.debug("Loaded JSON sidecar: %s", json_path)
+        else:
+            logger.debug("Ignoring %s (detected as whisper2obsidian cache)", json_path)
 
     # 2. Try XML sidecar
     elif (xml_path := audio.with_suffix(".xml")).exists():

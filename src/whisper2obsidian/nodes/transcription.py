@@ -42,9 +42,9 @@ def transcript_txt_path(audio_path: str | Path) -> Path:
 
 
 def transcript_json_path(audio_path: str | Path) -> Path:
-    """Return the <stem>.json metadata sidecar path for a given audio file."""
+    """Return the whispered metadata sidecar path for a given audio file."""
     audio = Path(audio_path)
-    return audio.with_suffix(".json")
+    return audio.with_suffix(".w2o.json")
 
 
 def transcription_node(state: W2OState) -> W2OState:

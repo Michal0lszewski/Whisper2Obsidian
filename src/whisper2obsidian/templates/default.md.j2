@@ -1,0 +1,50 @@
+---
+tags:
+{% for tag in tags %}  - {{ tag }}
+{% endfor %}date: {{ metadata.date_display }}
+source: "{{ metadata.title }}"
+category: "{{ metadata.category }}"
+language: "{{ language }}"
+{% for key, val in dataview_fields.items() %}{{ key }}:: {{ val }}
+{% endfor %}---
+
+# {{ title }}
+
+> [!NOTE] Summary
+> {{ summary }}
+
+## Key Points
+
+{% for point in key_points %}- **{{ point }}**
+{% endfor %}
+
+{% if action_items %}
+## Action Items
+
+{% for item in action_items %}- [ ] {{ item }}
+{% endfor %}
+{% endif %}
+
+{% if suggested_links %}
+## Related Notes
+
+{% for link in suggested_links %}- [[{{ link }}]]
+{% endfor %}
+{% endif %}
+
+{% if mermaid_diagram %}
+## Diagram
+
+```mermaid
+{{ mermaid_diagram }}
+```
+{% endif %}
+
+---
+
+> [!TIP] Raw Transcript
+> <details><summary>Click to expand</summary>
+>
+> {{ transcript | replace('\n', '\n> ') }}
+>
+> </details>

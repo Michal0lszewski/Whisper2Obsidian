@@ -1,0 +1,54 @@
+---
+tags:
+{% for tag in tags %}  - {{ tag }}
+{% endfor %}date: {{ metadata.date_display }}
+source: "{{ metadata.title }}"
+category: "meeting"
+language: "{{ language }}"
+status:: inbox
+{% for key, val in dataview_fields.items() %}{{ key }}:: {{ val }}
+{% endfor %}---
+
+# 📋 {{ title }}
+
+> [!IMPORTANT] Meeting Summary
+> {{ summary }}
+
+## Attendees & Context
+
+> [!NOTE]
+> Category: **Meeting** · Date: **{{ metadata.date_display }}**{% if metadata.location %} · Location: **{{ metadata.location }}**{% endif %}
+
+## Key Discussion Points
+
+{% for point in key_points %}- **{{ point }}**
+{% endfor %}
+
+## Decisions & Action Items
+
+{% for item in action_items %}- [ ] {{ item }}
+{% endfor %}
+
+{% if suggested_links %}
+## Related Notes
+
+{% for link in suggested_links %}- [[{{ link }}]]
+{% endfor %}
+{% endif %}
+
+{% if mermaid_diagram %}
+## Process / Timeline
+
+```mermaid
+{{ mermaid_diagram }}
+```
+{% endif %}
+
+---
+
+> [!TIP] Raw Transcript
+> <details><summary>Click to expand</summary>
+>
+> {{ transcript | replace('\n', '\n> ') }}
+>
+> </details>

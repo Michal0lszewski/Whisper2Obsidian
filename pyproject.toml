@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "whisper2obsidian"
+version = "0.1.0"
+description = "LangGraph pipeline: iPhone voice memos → Obsidian Markdown notes"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    # LangChain / LangGraph
+    "langgraph>=0.2.0",
+    "langchain-core>=0.3.0",
+    "langchain-groq>=0.2.0",
+    # Local transcription (Apple Silicon – MLX backend)
+    "mlx-whisper>=0.4.0",
+    # Settings & env
+    "pydantic-settings>=2.3.0",
+    "python-dotenv>=1.0.1",
+    # Templates
+    "Jinja2>=3.1.4",
+    # Audio handling
+    "ffmpeg-python>=0.2.0",
+    # Utilities
+    "tiktoken>=0.7.0",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-mock>=3.14.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.5.0",
+]
+
+[project.scripts]
+whisper2obsidian = "whisper2obsidian.main:main"
+w2o-harvest = "whisper2obsidian.scripts.vault_harvest:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/whisper2obsidian"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -79,7 +79,7 @@ whisper2obsidian --show-rate-usage   # show Groq token/request counters
 | `INBOX_FOLDER` | `00 Inbox` | Sub-folder for new notes |
 | `GROQ_API_KEY` | _required_ | Groq API key |
 | `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model |
-| `WHISPER_MODEL` | `mlx-community/whisper-large-v3-turbo` | MLX Whisper model |
+| `WHISPER_MODEL` | `mlx-community/whisper-large-v3-mlx` | MLX Whisper model |
 | `GROQ_RPM_LIMIT` | `28` | Max requests/min (free cap: 30) |
 | `GROQ_TPM_LIMIT` | `11000` | Max tokens/min (free cap: 12 000) |
 | `GROQ_RPD_LIMIT` | `950` | Max requests/day (free cap: 1 000) |

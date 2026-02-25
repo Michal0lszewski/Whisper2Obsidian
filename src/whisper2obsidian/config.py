@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # ── Whisper ────────────────────────────────────────────────────────────
     whisper_model: str = Field(
-        "mlx-community/whisper-large-v3-turbo",
+        "mlx-community/whisper-large-v3-mlx",
         description="HuggingFace repo ID or local path for mlx-whisper",
     )
 

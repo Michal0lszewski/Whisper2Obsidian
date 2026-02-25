@@ -1,0 +1,60 @@
+---
+tags:
+{% for tag in tags %}  - {{ tag }}
+{% endfor %}date: {{ metadata.date_display }}
+duration: "{{ metadata.duration_display }}"
+source: "{{ metadata.title }}"
+category: "course"
+language: "{{ language }}"
+status:: review
+{% for key, val in dataview_fields.items() %}{{ key }}:: {{ val }}
+{% endfor %}---
+
+# 🎓 {{ title }}
+
+> [!IMPORTANT] Core Concept
+> {{ summary }}
+
+## Key Concepts
+
+{% for point in key_points %}- **{{ point }}**
+{% endfor %}
+
+{% if action_items %}
+## Follow-up / Practice
+
+{% for item in action_items %}- [ ] {{ item }}
+{% endfor %}
+{% endif %}
+
+## Concept Map
+
+```markmap
+# {{ title }}
+{% for point in key_points %}## {{ point }}
+{% endfor %}{% for link in suggested_links %}## [[{{ link }}]]
+{% endfor %}```
+
+{% if mermaid_diagram %}
+## Diagram
+
+```mermaid
+{{ mermaid_diagram }}
+```
+{% endif %}
+
+{% if suggested_links %}
+## Related Notes
+
+{% for link in suggested_links %}- [[{{ link }}]]
+{% endfor %}
+{% endif %}
+
+---
+
+> [!TIP] Raw Transcript
+> <details><summary>Click to expand</summary>
+>
+> {{ transcript | replace('\n', '\n> ') }}
+>
+> </details>

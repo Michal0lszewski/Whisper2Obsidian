@@ -37,20 +37,55 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Known categories from Voice Record Pro (mapped to template keys)
+# Known categories from Voice Record Pro (mapped to template keys).
+# Matching is case-insensitive (values are lowercased before lookup in _normalise).
 CATEGORY_MAP: dict[str, str] = {
+    # ── Books / Reading ────────────────────────────────────────────────
+    "books": "books",
+    "book": "books",
+    "reading": "books",
+    # ── Course / Learning ──────────────────────────────────────────────
+    "course": "course",
+    "courses": "course",
+    "lecture": "course",
+    "lectures": "course",
+    "class": "course",
+    # ── Generic / Default ──────────────────────────────────────────────
+    "generic": "default",
+    "general": "default",
+    "note": "default",
+    "notes": "default",
+    "memo": "default",
+    "memos": "default",
+    "": "default",
+    # ── Ideas ──────────────────────────────────────────────────────────
+    "ideas": "idea",
+    "idea": "idea",
+    "brainstorm": "idea",
+    "inspiration": "idea",
+    # ── Meeting ────────────────────────────────────────────────────────
     "meeting": "meeting",
     "meetings": "meeting",
-    "idea": "idea",
-    "ideas": "idea",
+    # ── Podcast ────────────────────────────────────────────────────────
+    "podcast": "podcast",
+    "podcasts": "podcast",
+    # ── Research ───────────────────────────────────────────────────────
     "research": "research",
-    "lecture": "research",
+    # ── Shopping ───────────────────────────────────────────────────────
+    "shopping": "shopping",
+    "shop": "shopping",
+    "grocery": "shopping",
+    "groceries": "shopping",
+    # ── Todo / Tasks ───────────────────────────────────────────────────
+    "todo": "todo",
+    "todos": "todo",
+    "task": "todo",
+    "tasks": "todo",
+    "reminder": "todo",
+    "reminders": "todo",
+    # ── Misc ───────────────────────────────────────────────────────────
     "journal": "default",
     "personal": "default",
-    "note": "default",
-    "memo": "default",
-    "reminder": "default",
-    "": "default",
 }
 
 

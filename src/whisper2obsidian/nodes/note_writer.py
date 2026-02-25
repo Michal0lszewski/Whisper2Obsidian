@@ -12,6 +12,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from whisper2obsidian.services.metadata_parser import CATEGORY_MAP
 from whisper2obsidian.state import W2OState
 
 logger = logging.getLogger(__name__)
@@ -29,8 +30,12 @@ def note_writer_node(state: W2OState) -> W2OState:
     metadata: dict[str, Any] = state.get("metadata", {})
     transcript: str = state.get("transcript", "")
 
+    # Resolve template key: LLM override takes priority, then metadata category.
+    # Both raw category values are normalised through CATEGORY_MAP so the LLM
+    # can say "books" and still get the correct "books.md.j2" template.
+    raw_override = (analysis.get("category_override") or "").strip().lower()
     template_key = (
-        analysis.get("category_override")
+        CATEGORY_MAP.get(raw_override)
         or metadata.get("template_key", "default")
     )
 

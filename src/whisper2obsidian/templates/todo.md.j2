@@ -1,0 +1,49 @@
+---
+tags:
+{% for tag in tags %}  - {{ tag }}
+{% endfor %}date: {{ metadata.date_display }}
+duration: "{{ metadata.duration_display }}"
+source: "{{ metadata.title }}"
+category: "todo"
+language: "{{ language }}"
+status:: open
+{% for key, val in dataview_fields.items() %}{{ key }}:: {{ val }}
+{% endfor %}---
+
+# ✅ {{ title }}
+
+> [!IMPORTANT] Context
+> {{ summary }}
+
+## Tasks
+
+{% if action_items %}
+{% for item in action_items %}- [ ] {{ item }}
+{% endfor %}
+{% else %}
+{% for point in key_points %}- [ ] {{ point }}
+{% endfor %}
+{% endif %}
+
+{% if action_items and key_points %}
+## Notes
+
+{% for point in key_points %}- {{ point }}
+{% endfor %}
+{% endif %}
+
+{% if suggested_links %}
+## Related Notes
+
+{% for link in suggested_links %}- [[{{ link }}]]
+{% endfor %}
+{% endif %}
+
+---
+
+> [!TIP] Raw Transcript
+> <details><summary>Click to expand</summary>
+>
+> {{ transcript | replace('\n', '\n> ') }}
+>
+> </details>

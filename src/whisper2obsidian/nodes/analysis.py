@@ -59,8 +59,9 @@ Rules:
   only introduce new tags if genuinely needed.
 - suggested_links: choose ONLY from the provided existing_links stems.
 - mermaid_diagram: provide a Mermaid flowchart string ONLY for process/workflow memos, else null.
-- category_override: override the category if the transcript clearly belongs to a different
-  category than the metadata claims, else null.
+- category_override: ONLY use one of these exact values if the transcript clearly belongs
+  to a different category than the metadata claims, else null:
+  "books", "course", "generic", "ideas", "meeting", "podcast", "research", "shopping", "todo"
 - dataview_fields: any key::value pairs useful for Dataview queries (e.g. "project", "status").
 """).strip()
 

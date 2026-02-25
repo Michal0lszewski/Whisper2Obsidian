@@ -86,10 +86,7 @@ cp .env.example .env
 # Edit .env – set AUDIO_FOLDER, VAULT_PATH, GROQ_API_KEY
 nano .env
 
-# 5. Index your existing vault (recommended before first run)
-w2o-harvest
-
-# 6. Run
+# 5. Run
 whisper2obsidian          # daemon mode (polls every 60s)
 whisper2obsidian --once   # process one memo and exit
 whisper2obsidian --show-rate-usage   # show Groq token/request counters
@@ -214,8 +211,8 @@ pytest tests/ -v
 # Lint
 ruff check src/ tests/
 
-# Re-index vault
-w2o-harvest
+# Clear tracking database
+w2o-wipe
 ```
 
 ---
@@ -240,7 +237,7 @@ src/whisper2obsidian/
 │   ├── metadata_parser.py # .meta.txt / .json / .xml sidecar parser
 │   └── vault_index.py
 ├── scripts/
-│   └── vault_harvest.py
+│   └── wipe_db.py
 └── templates/
     ├── default.md.j2
     ├── books.md.j2

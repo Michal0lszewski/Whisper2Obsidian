@@ -181,6 +181,18 @@ The dual check makes the system robust against DB resets and manual vault edits.
 
 ---
 
+## Resetting the Pipeline
+
+If you want to quickly force Whisper2Obsidian to reprocess your Voice Record Pro audio files as if they were brand new, you can completely clear the internal tracking database.
+
+Run the following command anywhere in the project:
+```bash
+w2o-wipe
+```
+This utility script securely deletes all tracking records (tags, links, and note mappings) from the SQLite `w2o.db` database. **Your original `.m4a` audio files and generated Obsidian `.md` notes are never deleted.**
+
+---
+
 ## Obsidian Plugins Used
 
 | Plugin | Usage |

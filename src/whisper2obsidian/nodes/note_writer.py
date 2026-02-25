@@ -56,6 +56,7 @@ def note_writer_node(state: W2OState) -> W2OState:
 
     template = env.get_template(template_file)
 
+    # Context for Jinja2 template
     context = {
         "title": analysis.get("title", metadata.get("title", "Untitled")),
         "summary": analysis.get("summary", ""),
@@ -72,7 +73,9 @@ def note_writer_node(state: W2OState) -> W2OState:
     }
 
     note_markdown = template.render(**context)
-    note_filename = _slugify(context["title"])
+    
+    # Filename uses the category. file_writer_node will append date and handle collisions.
+    note_filename = template_key.lower()
 
     logger.info("Note rendered: %s (%d chars)", note_filename, len(note_markdown))
 

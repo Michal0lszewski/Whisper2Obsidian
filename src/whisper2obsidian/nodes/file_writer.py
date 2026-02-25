@@ -25,7 +25,7 @@ def file_writer_node(state: W2OState) -> W2OState:
     note_filename = state.get("note_filename", "untitled")
     audio_path = state.get("audio_path", "")
     analysis = state.get("analysis", {})
-    state.get("metadata", {})
+    metadata = state.get("metadata", {})
 
     if not note_markdown:
         return {**state, "errors": ["file_writer_node: note_markdown is empty"]}
@@ -34,12 +34,15 @@ def file_writer_node(state: W2OState) -> W2OState:
     inbox = settings.inbox_path
     inbox.mkdir(parents=True, exist_ok=True)
 
-    # Avoid collisions – append date if file already exists
-    date_prefix = datetime.now(UTC).strftime("%Y-%m-%d")
+    # Use the recording date from metadata, or fallback to today
+    date_prefix = metadata.get("date_display") or datetime.now(UTC).strftime("%Y-%m-%d")
+
+    # Avoid collisions – append incremental number if file already exists
     candidate = inbox / f"{date_prefix}-{note_filename}.md"
-    if candidate.exists():
-        ts = datetime.now(UTC).strftime("%H%M%S")
-        candidate = inbox / f"{date_prefix}-{note_filename}-{ts}.md"
+    counter = 1
+    while candidate.exists():
+        candidate = inbox / f"{date_prefix}-{note_filename}-{counter}.md"
+        counter += 1
 
     candidate.write_text(note_markdown, encoding="utf-8")
     logger.info("Note written: %s", candidate)

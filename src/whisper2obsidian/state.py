@@ -17,6 +17,7 @@ class W2OState(TypedDict, total=False):
     audio_path: str                  # Absolute path to the .m4a file
     metadata: dict[str, Any]         # Parsed sidecar metadata from Voice Record Pro
     already_processed: list[str]     # File stems already in the DB
+    transcript_cached: bool          # True if <stem>.txt already exists → skip Whisper
 
     # ── Transcription ──────────────────────────────────────────────────────
     transcript: str                  # Full transcribed text

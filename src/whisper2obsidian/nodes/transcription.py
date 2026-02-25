@@ -6,17 +6,22 @@ mlx-whisper handles AAC/M4A natively via ffmpeg under the hood.
 
 Transcript caching
 ------------------
-After a successful transcription the full text is written as a plain-text
-sidecar: ``<audio_stem>.transcript.txt`` (same folder as the audio file).
+After a successful transcription two sidecar files are written next to the
+audio file, inheriting its stem:
 
-On subsequent runs, if that file already exists, Whisper is skipped and the
-cached transcript is loaded directly – saving time and compute.
-To force a re-transcription simply delete (or rename) the .transcript.txt file.
+  <stem>.txt   – plain-text transcript (UTF-8)
+  <stem>.json  – detected language, token count, timestamp
+
+On subsequent runs, if <stem>.txt already exists, Whisper is skipped and the
+cached transcript is loaded.  Language is restored from <stem>.json.
+To force a re-transcription simply delete the .txt (and optionally .json) file.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 import tiktoken
@@ -30,10 +35,16 @@ logger = logging.getLogger(__name__)
 _enc = tiktoken.get_encoding("cl100k_base")
 
 
-def _transcript_cache_path(audio_path: str) -> Path:
-    """Return the expected .transcript.txt path for a given audio file."""
+def transcript_txt_path(audio_path: str | Path) -> Path:
+    """Return the <stem>.txt transcript sidecar path for a given audio file."""
     audio = Path(audio_path)
-    return audio.parent / (audio.stem + ".transcript.txt")
+    return audio.with_suffix(".txt")
+
+
+def transcript_json_path(audio_path: str | Path) -> Path:
+    """Return the <stem>.json metadata sidecar path for a given audio file."""
+    audio = Path(audio_path)
+    return audio.with_suffix(".json")
 
 
 def transcription_node(state: W2OState) -> W2OState:
@@ -43,38 +54,50 @@ def transcription_node(state: W2OState) -> W2OState:
       - language
       - transcript_token_count
 
-    If a cached .transcript.txt file exists next to the audio, Whisper is
-    skipped and the cached text is used instead.
+    Cache behaviour
+    ---------------
+    * If <stem>.txt exists alongside the audio, Whisper is skipped and the
+      cached text is loaded.  Language is read from <stem>.json (if present).
+    * After a fresh transcription both <stem>.txt and <stem>.json are written.
     """
     audio_path = state.get("audio_path", "")
     if not audio_path:
         return {**state, "errors": ["transcription_node: audio_path is empty"]}
 
-    cache_path = _transcript_cache_path(audio_path)
+    txt_path  = transcript_txt_path(audio_path)
+    json_path = transcript_json_path(audio_path)
 
-    # ── 1. Try loading from cache ─────────────────────────────────────────────
-    if cache_path.exists():
+    # ── 1. Cache hit: load transcript from <stem>.txt ─────────────────────────
+    if txt_path.exists():
         try:
-            transcript = cache_path.read_text(encoding="utf-8").strip()
+            transcript = txt_path.read_text(encoding="utf-8").strip()
             if transcript:
                 token_count = len(_enc.encode(transcript))
+
+                # Restore language from companion .json if available
+                language = "unknown"
+                if json_path.exists():
+                    try:
+                        meta = json.loads(json_path.read_text(encoding="utf-8"))
+                        language = meta.get("language", "unknown")
+                    except (OSError, json.JSONDecodeError):
+                        pass
+
                 logger.info(
-                    "Loaded transcript from cache: %s (%d chars, ~%d tokens)",
-                    cache_path.name,
-                    len(transcript),
-                    token_count,
+                    "Transcript loaded from cache: %s (%d chars, ~%d tokens, lang=%s)",
+                    txt_path.name, len(transcript), token_count, language,
                 )
                 return {
                     **state,
                     "transcript": transcript,
-                    "language": "cached",   # language unknown from cache
+                    "language": language,
                     "transcript_token_count": token_count,
                 }
-            logger.warning("Cache file %s is empty – falling through to Whisper", cache_path.name)
+            logger.warning("Cache file %s is empty – re-transcribing", txt_path.name)
         except OSError as exc:
-            logger.warning("Could not read transcript cache (%s): %s – re-transcribing", cache_path, exc)
+            logger.warning("Cannot read transcript cache (%s): %s – re-transcribing", txt_path, exc)
 
-    # ── 2. Transcribe with Whisper ────────────────────────────────────────────
+    # ── 2. Fresh transcription with Whisper ───────────────────────────────────
     logger.info("Transcribing %s with model %s", audio_path, settings.whisper_model)
 
     try:
@@ -90,22 +113,32 @@ def transcription_node(state: W2OState) -> W2OState:
         return {**state, "errors": [f"Transcription error: {exc}"]}
 
     transcript: str = result.get("text", "").strip()
-    language: str = result.get("language", "unknown")
+    language: str   = result.get("language", "unknown")
     token_count: int = len(_enc.encode(transcript))
 
     logger.info(
         "Transcription complete: %d chars, ~%d tokens, language=%s",
-        len(transcript),
-        token_count,
-        language,
+        len(transcript), token_count, language,
     )
 
-    # ── 3. Write transcript to cache ──────────────────────────────────────────
+    # ── 3. Write <stem>.txt and <stem>.json ───────────────────────────────────
     try:
-        cache_path.write_text(transcript, encoding="utf-8")
-        logger.info("Transcript cached → %s", cache_path.name)
+        txt_path.write_text(transcript, encoding="utf-8")
+        logger.info("Transcript written → %s", txt_path.name)
     except OSError as exc:
-        logger.warning("Could not write transcript cache (%s): %s", cache_path, exc)
+        logger.warning("Cannot write transcript cache (%s): %s", txt_path, exc)
+
+    try:
+        meta = {
+            "language": language,
+            "token_count": token_count,
+            "detected_at": datetime.now(UTC).isoformat(),
+            "audio_file": Path(audio_path).name,
+        }
+        json_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        logger.info("Transcript metadata written → %s", json_path.name)
+    except OSError as exc:
+        logger.warning("Cannot write transcript metadata (%s): %s", json_path, exc)
 
     return {
         **state,

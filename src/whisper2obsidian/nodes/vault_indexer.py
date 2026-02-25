@@ -22,6 +22,11 @@ def vault_indexer_node(state: W2OState) -> W2OState:
     """
     index = VaultIndex(settings.processed_db)
 
+    # Automatically garbage collect deleted notes and harvest new changes
+    # from the Obsidian vault so the LLM context is 100% up to date.
+    logger.info("Syncing vault index with filesystem...")
+    index.sync_vault(settings.vault_path)
+
     existing_tags = index.all_tags()
     existing_links = index.all_notes()   # {stem: title}
 

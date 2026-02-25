@@ -172,6 +172,24 @@ class VaultIndex:
         self.upsert_tags(stem, tags)
         self.upsert_links(stem, links)
 
+    def sync_vault(self, vault_path: Path) -> None:
+        """Read all vault .md files to upsert newer notes and delete missing ones."""
+        current_mds = {md.stem: md for md in iter_vault_md(vault_path)}
+
+        # 1. Update/Add existing notes from the filesystem
+        for stem, path in current_mds.items():
+            self.index_markdown_file(path)
+
+        # 2. Delete any DB records for notes that no longer exist on disk
+        # (Excluding audio processing markers that have path="")
+        with self._connect() as conn:
+            rows = conn.execute("SELECT stem, path FROM notes WHERE path != ''").fetchall()
+            for r in rows:
+                db_stem = r["stem"]
+                if db_stem not in current_mds:
+                    self.delete_note(db_stem)
+                    logger.info("Garbage collected deleted note from DB: %s", db_stem)
+
 
 # ── Module-level helpers ─────────────────────────────────────────────────────
 

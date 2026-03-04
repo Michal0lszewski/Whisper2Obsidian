@@ -74,7 +74,8 @@ Rules:
 - category_override: ONLY use one of these exact values if the transcript clearly belongs
   to a different category than the metadata claims, else null:
   "books", "course", "generic", "ideas", "meeting", "podcast", "research", "shopping", "todo"
-- dataview_fields: any key::value pairs useful for Dataview queries (e.g. "project", "status").
+- dataview_fields: MUST BE AN EMPTY OBJECT `{}` unless I explicitly dictate a key/value field
+  in the transcript (e.g. "Set project to Whisper2Obsidian"). Do NOT invent or infer fields.
 """).strip()
 
 _CHUNK_SYSTEM_PROMPT = textwrap.dedent("""

@@ -16,11 +16,12 @@ When you record a new voice memo on your iPhone (e.g. using Voice Record Pro) an
 1. **File Detection:** The **watcher node** constantly scans your `AUDIO_FOLDER`. When a new `.m4a` audio file appears, it reads the associated Voice Record Pro `.meta.txt` sidecar file to extract original creation date, category, and duration.
 2. **Local Transcription:** The **transcription node** intercepts the audio. It first checks if a plain-text transcript (`.txt`) has already been cached. If not, it uses Apple Silicon-optimized `mlx-whisper` to transcribe the audio locally into text.
 3. **Vault Context Loading:** The **vault indexer node** queries the local SQLite database to load your existing Obsidian tags, ensuring the system knows your current tag vocabulary.
-4. **Agentic Semantic Analysis:** The **analysis node** takes the raw transcript and uses an LLM (Cerebras Llama-3.3-70b or Groq) to analyze it. 
-   - *Semantic Search:* The agent actively calls tools to search a local **ChromaDB vector database**, finding existing notes in your vault that are conceptually similar to the new memo.
-   - *Structuring:* It outputs a structured JSON object containing a clean title, summary, key points, action items, relevant existing tags, and `[[wiki-links]]` to the similar notes it discovered.
+4. **Agentic Semantic Analysis:** The **analysis node** processes the raw transcript using a preferred LLM (Cerebras Llama-3.3-70b for speed, or Groq fallback).
+   - *Chunking:* If the transcript is very long, it is split into digestible chunks that are summarised individually, then synthesised back together.
+   - *Tools & Context:* The LLM runs a ReAct loop equipped with LangChain tools. It searches a local **ChromaDB vector database** for similar past notes and checks the **SQLite** index for existing tags.
+   - *Structuring:* It outputs a strict JSON object mapping out a title, summary, key points, action items, existing tags, and `[[wiki-links]]` to the discovered similar notes.
 5. **Markdown Templating:** The **note writer node** takes this JSON and passes it through an Obsidian-compatible Jinja2 template dynamically chosen based on the Voice Record Pro "Category" (e.g., meeting notes get a different layout than generic ideas).
-6. **Publishing & Syncing:** The **file writer node** saves the final `.md` file into your Obsidian Inbox. It then updates both the SQLite tracking database and the ChromaDB vector index with the new note's summary and embedding, so it can be found during future semantic searches.
+6. **Publishing & Syncing:** The **file writer node** saves the final `.md` file into your Obsidian Inbox. Finally, it updates the **SQLite tracking database** to mark the original memo as processed, and embeds the new note's generated summary into **ChromaDB** so that it can be found in future semantic searches.
 
 ## Architecture & LangGraph Flow
 
@@ -56,8 +57,9 @@ The pipeline revolves around `W2OState`. It holds everything from initial audio 
 - **macOS** with Apple Silicon (M1/M2/M3/M4)
 - **Python 3.11+**
 - **ffmpeg** installed (`brew install ffmpeg`)
-- **Groq API key** (free tier is sufficient)
+- **API Keys**: Cerebras API key (recommended for speed) or Groq API key (free tier is sufficient)
 - Google Drive folder mounted locally (no GDrive API needed)
+- **Local DBs**: Implicitly uses SQLite (for progress/tags) and ChromaDB (for vector semantic search) natively.
 
 ---
 
@@ -173,16 +175,24 @@ The dual check makes the system robust against DB resets and manual vault edits.
 
 ---
 
-## Indexing Existing Vault Notes
+## Indexing Existing Vault Notes (First-Time Usage)
 
-To empower the semantic search functionality, Whisper2Obsidian maintains a local `ChromaDB` vector index summarizing your historical Obsidian notes.
+To empower the semantic search functionality, Whisper2Obsidian maintains a local `ChromaDB` vector index summarizing your historical Obsidian notes and an `SQLite` database of your existing tags.
 
-If you already have hundreds of notes in your vault, you can bulk-index them so that new voice memos can link to your old thoughts:
+**If you are connecting this tool to an existing Obsidian vault for the first time, you MUST run the harvest script before processing new audio files.** 
+
+This ensures that your incoming voice memos can accurately link to your old thoughts and use your established tagging vocabulary.
 
 ```bash
 uv run python src/whisper2obsidian/scripts/vault_harvest.py
 ```
-This script scans all `.md` files in your vault. For each new note, it asks the LLM to generate a dense 500-character summary, and embeds it into ChromaDB. It only processes files whose modification time has changed since the last run.
+
+**What it does:**
+1. Scans all `.md` files in your configured `VAULT_PATH`.
+2. Extracts tags and stores them in the local SQLite database (`w2o.db`).
+3. Asks the LLM to generate a dense 500-character summary for each note.
+4. Embeds these summaries into ChromaDB.
+5. It only processes files whose modification time has changed since the last run.
 
 ---
 

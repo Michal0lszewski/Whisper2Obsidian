@@ -58,7 +58,8 @@ structured Obsidian notes. Analyse the transcript and return ONLY valid JSON
 }
 
 You have access to tools that can search for similar existing notes and retrieve known vault tags. 
-You MUST NOT guess tags or links without verifying them. You MUST call `get_known_tags` and `search_similar_notes` before completing the JSON.
+You MUST NOT guess tags or links without verifying them.
+You MUST call `get_known_tags` and `search_similar_notes` before completing the JSON.
 
 Rules:
 - PERSPECTIVE: Write ALL text in the FIRST-PERSON ("I need to", "My idea is") as if YOU
@@ -90,7 +91,8 @@ Use the same JSON schema as before:
  category_override, mermaid_diagram, dataview_fields}
 
 You have access to tools that can search for similar existing notes and retrieve known vault tags. 
-You MUST NOT guess tags or links without verifying them. You MUST call `get_known_tags` and `search_similar_notes` before completing the JSON.
+You MUST NOT guess tags or links without verifying them.
+You MUST call `get_known_tags` and `search_similar_notes` before completing the JSON.
 
 Strictly maintain FIRST-PERSON ("I", "my") perspective.
 tags and suggested_links MUST BE AN EMPTY ARRAY `[]` unless they are undeniably, explicitly 
@@ -163,9 +165,19 @@ async def _analysis_async(state: W2OState) -> W2OState:
         report = rate_limiter.usage_report()
         _log_rate_usage(report, provider)
 
+    # Check if analysis actually succeeded (has a title; not just the fallback)
+    analysis_failed = "title" not in analysis or analysis.get("_failed", False)
+
+    if analysis_failed:
+        logger.error(
+            "Analysis produced no usable output – aborting note creation. "
+            "Re-run to retry (transcript sidecar will skip Whisper)."
+        )
+
     return {
         **state,
         "analysis": analysis,
+        "analysis_failed": analysis_failed,
         "groq_tokens_used": total_tokens_used,
     }
 
@@ -249,8 +261,11 @@ async def _analyse_single(
     final_output = messages[-1].content
     raw = final_output.strip()
 
+    # Track failure: no output at all means LLM failed unrecoverably
+    any_failed = not raw
+
     rate_limiter.record_usage(actual_tokens)
-    return _safe_json(raw), actual_tokens
+    return _safe_json(raw, failed=any_failed), actual_tokens
 
 
 async def _analyse_chunked(
@@ -278,7 +293,7 @@ async def _analyse_chunked(
         except Exception as e:
             logger.error("Chunk processing failed: %s", e)
             continue
-            
+
         actual = (
             resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
         )
@@ -332,7 +347,9 @@ async def _analyse_chunked(
     total_tokens += actual_tokens
 
     final_output = messages[-1].content
-    return _safe_json(final_output.strip()), total_tokens
+    # Track failure: no output at all means LLM failed unrecoverably
+    any_synth_failed = not final_output.strip()
+    return _safe_json(final_output.strip(), failed=any_synth_failed), total_tokens
 
 
 def _build_user_message(
@@ -377,16 +394,19 @@ def _split_transcript(text: str, max_tokens: int) -> list[str]:
     return chunks
 
 
-def _safe_json(text: str) -> dict:
+def _safe_json(text: str, failed: bool = False) -> dict:
     """Parse JSON, strip markdown fences if present."""
     if text.startswith("```"):
         lines = text.splitlines()
         text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
     try:
-        return json.loads(text)
+        result = json.loads(text)
+        result["_failed"] = failed
+        return result
     except json.JSONDecodeError as exc:
         logger.warning("Failed to parse LLM JSON response: %s", exc)
         return {
+            "_failed": True,  # mark as unrecoverable
             "title": "Untitled Memo",
             "summary": text[:500],
             "key_points": [],

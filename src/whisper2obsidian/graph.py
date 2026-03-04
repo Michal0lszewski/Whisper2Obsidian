@@ -26,6 +26,11 @@ from whisper2obsidian.nodes.watcher import has_new_memo, watcher_node
 from whisper2obsidian.state import W2OState
 
 
+def analysis_succeeded(state: W2OState) -> str:
+    """Conditional edge: if analysis failed, abort the pipeline."""
+    return "end" if state.get("analysis_failed") else "note_writer"
+
+
 def compile_graph():
     """Build and compile the LangGraph state machine."""
     builder = StateGraph(W2OState)
@@ -51,10 +56,17 @@ def compile_graph():
         },
     )
 
-    # Linear pipeline
+    # Linear pipeline, with abort on analysis failure
     builder.add_edge("transcription", "vault_indexer")
     builder.add_edge("vault_indexer", "analysis")
-    builder.add_edge("analysis", "note_writer")
+    builder.add_conditional_edges(
+        "analysis",
+        analysis_succeeded,
+        {
+            "note_writer": "note_writer",
+            "end": END,
+        },
+    )
     builder.add_edge("note_writer", "file_writer")
     builder.add_edge("file_writer", END)
 

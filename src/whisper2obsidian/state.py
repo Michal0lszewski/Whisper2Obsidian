@@ -30,6 +30,7 @@ class W2OState(TypedDict, total=False):
 
     # ── Analysis ───────────────────────────────────────────────────────────
     analysis: dict[str, Any]  # Structured JSON from Groq
+    analysis_failed: bool  # True if the LLM completely failed (e.g. 429 unrecoverable)
     groq_tokens_used: int  # Actual tokens consumed for this run
 
     # ── Note generation ────────────────────────────────────────────────────

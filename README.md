@@ -97,9 +97,10 @@ whisper2obsidian --no-harvest        # skip parsing the existing vault on startu
 | `AUDIO_FOLDER` | _required_ | Path to Google Drive voice memo folder |
 | `VAULT_PATH` | _required_ | Obsidian vault root |
 | `INBOX_FOLDER` | `00 Inbox` | Sub-folder for new notes |
-| `CEREBRAS_API_KEY` | _optional_ | Fast inference API Key |
-| `CEREBRAS_MODEL` | `llama-3.3-70b` | Cerebras model |
-| `GROQ_API_KEY` | _optional_ | Fallback LLM API key |
+| `CEREBRAS_API_KEY` | _optional_ | Cerebras API Key (takes priority if set) |
+| `CEREBRAS_MODEL` | `gpt-oss-120b` | Cerebras model (120B open-source) |
+| `GROQ_API_KEY` | _optional_ | Groq API key (fallback if Cerebras not set) |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model |
 | `CHROMA_DB_DIR` | `data/chroma` | Local vector index directory |
 | `WHISPER_MODEL` | `mlx-community/whisper-large-v3-mlx` | MLX Whisper model |
 | `SHOW_RATE_USAGE` | `false` | Print rate limit usage tables |

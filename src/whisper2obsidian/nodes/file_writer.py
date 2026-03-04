@@ -51,8 +51,9 @@ def file_writer_node(state: W2OState) -> W2OState:
     index = VaultIndex(settings.processed_db)
     stem = candidate.stem
 
-    # Register the new note
-    index.upsert_note(stem, analysis.get("title", stem), str(candidate))
+    # Register the new note with its current mtime
+    file_mtime = candidate.stat().st_mtime
+    index.upsert_note(stem, analysis.get("title", stem), str(candidate), file_mtime=file_mtime)
     index.upsert_tags(stem, analysis.get("tags", []))
     index.upsert_links(stem, analysis.get("suggested_links", []))
 

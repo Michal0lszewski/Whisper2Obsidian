@@ -210,12 +210,12 @@ This utility script securely deletes all tracking records (tags, links, and note
 
 ## Rate Limiting
 
-The `GroqRateLimiter` service guards every Groq API call using a sliding-window algorithm:
+The `LLMRateLimiter` service guards every LLM API call using a sliding-window algorithm tailored to the specific provider (Cerebras or Groq) in use:
 
 - **RPM** and **TPM** tracked via 60-second deque window
 - **RPD** tracked via daily counter with midnight reset
 - `await_capacity(estimated_tokens)` sleeps automatically if limits would be exceeded
-- Configurable via `.env` so you can adjust for a paid Groq tier
+- Configurable via `.env` so you can adjust based on your specific free API tier.
 
 ---
 
@@ -250,8 +250,8 @@ src/whisper2obsidian/
 │   ├── note_writer.py     # Jinja2 template rendering
 │   └── file_writer.py     # vault write + SQLite update
 ├── services/
-│   ├── groq_rate_limiter.py
-│   ├── metadata_parser.py # .meta.txt / .json / .xml sidecar parser
+│   ├── llm_rate_limiter.py    # Sliding window rate guards
+│   ├── metadata_parser.py     # .meta.txt / .json / .xml sidecar parser
 │   └── vault_index.py
 ├── scripts/
 │   └── wipe_db.py

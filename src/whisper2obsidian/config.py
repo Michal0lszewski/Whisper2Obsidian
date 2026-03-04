@@ -26,6 +26,10 @@ class Settings(BaseSettings):
         Path(__file__).parent.parent.parent / "data" / "w2o.db",
         description="SQLite DB for processed files, tags and links",
     )
+    chroma_db_dir: Path = Field(
+        Path(__file__).parent.parent.parent / "data" / "chroma",
+        description="ChromaDB directory for vector embeddings",
+    )
 
     # ── Whisper ────────────────────────────────────────────────────────────
     whisper_model: str = Field(
@@ -33,17 +37,27 @@ class Settings(BaseSettings):
         description="HuggingFace repo ID or local path for mlx-whisper",
     )
 
-    # ── Groq ───────────────────────────────────────────────────────────────
-    groq_api_key: str = Field(..., description="Groq API key")
+    # ── LLM Providers ──────────────────────────────────────────────────────
+    groq_api_key: str | None = Field(None, description="Groq API key")
     groq_model: str = Field(
         "llama-3.3-70b-versatile",
         description="Groq model identifier",
     )
+    
+    cerebras_api_key: str | None = Field(None, description="Cerebras API key")
+    cerebras_model: str = Field(
+        "gpt-oss-120b", # "llama3.1-8b"
+        description="Cerebras model identifier",
+    )
 
-    # ── Groq rate limits (configurable safety caps) ────────────────────────
+    # ── Rate limits (configurable safety caps) ─────────────────────────────
     groq_rpm_limit: int = Field(28, description="Max requests per minute sent to Groq")
     groq_tpm_limit: int = Field(11_000, description="Max tokens per minute sent to Groq")
     groq_rpd_limit: int = Field(950, description="Max requests per day sent to Groq")
+
+    cerebras_rpm_limit: int = Field(30, description="Max requests per minute to Cerebras")
+    cerebras_tpm_limit: int = Field(64_000, description="Max tokens per minute to Cerebras")
+    cerebras_rpd_limit: int = Field(14_400, description="Max requests per day to Cerebras")
 
     # ── Logging / CLI ──────────────────────────────────────────────────────
     log_level: str = Field("INFO", description="Python logging level")

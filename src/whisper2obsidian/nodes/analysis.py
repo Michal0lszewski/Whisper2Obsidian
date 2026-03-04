@@ -15,15 +15,19 @@ import asyncio
 import json
 import logging
 import textwrap
+import time
 from typing import Any
 
 import tiktoken
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
 
 from whisper2obsidian.config import settings
-from whisper2obsidian.services.groq_rate_limiter import GroqRateLimiter
+from whisper2obsidian.services.llm_rate_limiter import get_rate_limiter
 from whisper2obsidian.state import W2OState
+from whisper2obsidian.tools.vault_tools import search_similar_notes, get_known_tags
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +36,7 @@ CHUNK_TOKEN_LIMIT = 6_000
 
 _enc = tiktoken.get_encoding("cl100k_base")
 
-# Module-level singleton rate limiter (shared across all calls in one run)
-_rate_limiter = GroqRateLimiter()
+_enc = tiktoken.get_encoding("cl100k_base")
 
 # ── Prompt templates ─────────────────────────────────────────────────────────
 
@@ -105,18 +108,31 @@ async def _analysis_async(state: W2OState) -> W2OState:
     metadata: dict[str, Any] = state.get("metadata", {})
     token_count: int = state.get("transcript_token_count", len(_enc.encode(transcript)))
 
-    llm = ChatGroq(
-        model=settings.groq_model,
-        api_key=settings.groq_api_key,
-        temperature=0.3,
-    )
+    if settings.cerebras_api_key:
+        provider = "cerebras"
+        llm = ChatOpenAI(
+            api_key=settings.cerebras_api_key,
+            base_url="https://api.cerebras.ai/v1",
+            model=settings.cerebras_model,
+            temperature=0.3,
+        )
+    else:
+        provider = "groq"
+        llm = ChatGroq(
+            model=settings.groq_model,
+            api_key=settings.groq_api_key,
+            temperature=0.3,
+        )
+        
+    rate_limiter = get_rate_limiter(provider)
 
     total_tokens_used = 0
+    start_time = time.perf_counter()
 
     if token_count <= CHUNK_TOKEN_LIMIT:
         # ── Single-pass analysis ─────────────────────────────────────────
         analysis, tokens = await _analyse_single(
-            llm, transcript, existing_tags, existing_links, metadata
+            llm, rate_limiter, transcript, existing_tags, existing_links, metadata
         )
         total_tokens_used = tokens
     else:
@@ -125,14 +141,16 @@ async def _analysis_async(state: W2OState) -> W2OState:
             "Transcript too long (%d tokens) – splitting into chunks", token_count
         )
         analysis, tokens = await _analyse_chunked(
-            llm, transcript, existing_tags, existing_links, metadata
+            llm, rate_limiter, transcript, existing_tags, existing_links, metadata
         )
         total_tokens_used = tokens
 
-    logger.info("Analysis complete, Groq tokens used: %d", total_tokens_used)
+    elapsed = time.perf_counter() - start_time
+    logger.info("Analysis complete in %.2fs. Tokens used: %d", elapsed, total_tokens_used)
 
     if settings.show_rate_usage:
-        _log_rate_usage()
+        report = rate_limiter.usage_report()
+        _log_rate_usage(report, provider)
 
     return {
         **state,
@@ -144,31 +162,71 @@ async def _analysis_async(state: W2OState) -> W2OState:
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 async def _analyse_single(
-    llm: ChatGroq,
+    llm: ChatGroq | ChatOpenAI,
+    rate_limiter,
     transcript: str,
     existing_tags: list[str],
     existing_links: dict[str, str],
     metadata: dict,
 ) -> tuple[dict, int]:
+    # Construct base prompt
     user_content = _build_user_message(transcript, existing_tags, existing_links, metadata)
-    estimated = len(_enc.encode(user_content)) + 1200  # prompt + generous reply budget
+    
+    # Track tokens manually for local safety via limiters
+    estimated = len(_enc.encode(user_content)) + 1200
+    await rate_limiter.await_capacity(estimated)
 
-    await _rate_limiter.await_capacity(estimated)
+    tools = [search_similar_notes, get_known_tags]
+    llm_with_tools = llm.bind_tools(tools)
+    
+    messages = [
+        SystemMessage(content=_SYSTEM_PROMPT),
+        HumanMessage(content=user_content)
+    ]
 
-    resp = await llm.ainvoke(
-        [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_content)]
-    )
-    raw = resp.content.strip()
-    actual_tokens = (
-        resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
-    )
-    _rate_limiter.record_usage(actual_tokens)
+    actual_tokens = 0
+    
+    # Run a simple tool loop
+    for _ in range(3): # Max 3 tool iterations
+        try:
+            resp = await llm_with_tools.ainvoke(messages)
+            if resp.usage_metadata:
+                actual_tokens += resp.usage_metadata.get("total_tokens", 0)
 
+            messages.append(resp)
+
+            if not resp.tool_calls:
+                # No more tools, final answer
+                break
+                
+            for tool_call in resp.tool_calls:
+                logger.info("Agent called tool: %s", tool_call["name"])
+                if tool_call["name"] == "search_similar_notes":
+                    tool_res = search_similar_notes.invoke(tool_call["args"])
+                elif tool_call["name"] == "get_known_tags":
+                    tool_res = get_known_tags.invoke(tool_call["args"])
+                else:
+                    tool_res = f"Unknown tool {tool_call['name']}"
+
+                messages.append(ToolMessage(
+                    content=str(tool_res),
+                    tool_call_id=tool_call["id"]
+                ))
+        except Exception as e:
+            logger.error("LLM evaluation / tool call failed: %s", e)
+            break
+
+    # If the LLM stopped using tools but didn't output JSON cleanly, or if it hit iteration limit
+    final_output = messages[-1].content
+    raw = final_output.strip()
+    
+    rate_limiter.record_usage(actual_tokens)
     return _safe_json(raw), actual_tokens
 
 
 async def _analyse_chunked(
-    llm: ChatGroq,
+    llm: ChatGroq | ChatOpenAI,
+    rate_limiter,
     transcript: str,
     existing_tags: list[str],
     existing_links: dict[str, str],
@@ -181,7 +239,7 @@ async def _analyse_chunked(
     for i, chunk in enumerate(chunks, 1):
         logger.info("Summarising chunk %d/%d", i, len(chunks))
         estimated = len(_enc.encode(chunk)) + 600
-        await _rate_limiter.await_capacity(estimated)
+        await rate_limiter.await_capacity(estimated)
 
         resp = await llm.ainvoke(
             [SystemMessage(content=_CHUNK_SYSTEM_PROMPT), HumanMessage(content=chunk)]
@@ -191,7 +249,7 @@ async def _analyse_chunked(
             if resp.usage_metadata
             else estimated
         )
-        _rate_limiter.record_usage(actual)
+        rate_limiter.record_usage(actual)
         total_tokens += actual
         summaries.append(resp.content.strip())
 
@@ -199,18 +257,51 @@ async def _analyse_chunked(
     combined = "\n\n---\n\n".join(summaries)
     synth_user = _build_user_message(combined, existing_tags, existing_links, metadata)
     estimated = len(_enc.encode(synth_user)) + 1200
-    await _rate_limiter.await_capacity(estimated)
+    await rate_limiter.await_capacity(estimated)
 
-    resp = await llm.ainvoke(
-        [SystemMessage(content=_SYNTHESIS_PROMPT), HumanMessage(content=synth_user)]
-    )
-    actual = (
-        resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
-    )
-    _rate_limiter.record_usage(actual)
-    total_tokens += actual
+    tools = [search_similar_notes, get_known_tags]
+    llm_with_tools = llm.bind_tools(tools)
+    
+    messages = [
+        SystemMessage(content=_SYNTHESIS_PROMPT),
+        HumanMessage(content=synth_user)
+    ]
+    
+    actual_tokens = 0
+    # Run a simple tool loop
+    for _ in range(3): # Max 3 tool iterations
+        try:
+            resp = await llm_with_tools.ainvoke(messages)
+            if resp.usage_metadata:
+                actual_tokens += resp.usage_metadata.get("total_tokens", 0)
 
-    return _safe_json(resp.content.strip()), total_tokens
+            messages.append(resp)
+
+            if not getattr(resp, "tool_calls", None):
+                break
+                
+            for tool_call in resp.tool_calls:
+                logger.info("Agent called tool: %s", tool_call["name"])
+                if tool_call["name"] == "search_similar_notes":
+                    tool_res = search_similar_notes.invoke(tool_call["args"])
+                elif tool_call["name"] == "get_known_tags":
+                    tool_res = get_known_tags.invoke(tool_call["args"])
+                else:
+                    tool_res = f"Unknown tool {tool_call['name']}"
+
+                messages.append(ToolMessage(
+                    content=str(tool_res),
+                    tool_call_id=tool_call["id"]
+                ))
+        except Exception as e:
+            logger.error("LLM synthesis evaluation / tool call failed: %s", e)
+            break
+            
+    rate_limiter.record_usage(actual_tokens)
+    total_tokens += actual_tokens
+
+    final_output = messages[-1].content
+    return _safe_json(final_output.strip()), total_tokens
 
 
 def _build_user_message(
@@ -277,13 +368,12 @@ def _safe_json(text: str) -> dict:
         }
 
 
-def _log_rate_usage() -> None:
-    report = _rate_limiter.usage_report()
+def _log_rate_usage(report: dict, provider: str) -> None:
     from rich.console import Console
     from rich.table import Table
 
     console = Console()
-    table = Table(title="Groq Rate Usage", show_header=True)
+    table = Table(title=f"{provider.capitalize()} Rate Usage", show_header=True)
     table.add_column("Metric")
     table.add_column("Used")
     table.add_column("Limit")

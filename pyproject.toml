@@ -26,6 +26,8 @@ dependencies = [
     # Utilities
     "tiktoken>=0.7.0",
     "rich>=13.7.0",
+    "chromadb>=0.4.24",
+    "langchain-openai>=0.1.0",
 ]
 
 [project.optional-dependencies]

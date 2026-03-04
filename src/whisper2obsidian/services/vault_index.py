@@ -51,7 +51,8 @@ class VaultIndex:
                     stem       TEXT PRIMARY KEY,
                     title      TEXT,
                     path       TEXT,
-                    updated_at TEXT
+                    updated_at TEXT,
+                    file_mtime REAL
                 );
                 CREATE TABLE IF NOT EXISTS tags (
                     tag  TEXT NOT NULL,
@@ -67,6 +68,11 @@ class VaultIndex:
                 CREATE INDEX IF NOT EXISTS idx_links_from ON links(from_stem);
             """)
 
+            # Add file_mtime column if it doesn't exist (for existing databases)
+            columns = [c["name"] for c in conn.execute("PRAGMA table_info(notes)").fetchall()]
+            if "file_mtime" not in columns:
+                conn.execute("ALTER TABLE notes ADD COLUMN file_mtime REAL DEFAULT 0;")
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
@@ -74,12 +80,13 @@ class VaultIndex:
 
     # ── Write ────────────────────────────────────────────────────────────────
 
-    def upsert_note(self, stem: str, title: str, path: str) -> None:
+    def upsert_note(self, stem: str, title: str, path: str, file_mtime: float = 0.0) -> None:
         now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO notes (stem, title, path, updated_at) VALUES (?,?,?,?)",
-                (stem, title, path, now),
+                "INSERT OR REPLACE INTO notes (stem, title, path, updated_at, file_mtime) "
+                "VALUES (?,?,?,?,?)",
+                (stem, title, path, now, file_mtime),
             )
 
     def upsert_tags(self, stem: str, tags: list[str]) -> None:
@@ -119,33 +126,36 @@ class VaultIndex:
             rows = conn.execute("SELECT stem, title FROM notes ORDER BY stem").fetchall()
         return {r["stem"]: r["title"] for r in rows}
 
-    def tags_for_note(self, stem: str) -> list[str]:
+    def all_note_mtimes(self) -> dict[str, float]:
+        """Return {stem: file_mtime} for all indexed notes to detect modifications."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT tag FROM tags WHERE stem = ?", (stem,)
+                "SELECT stem, file_mtime FROM notes WHERE path != '' ORDER BY stem"
             ).fetchall()
+        return {r["stem"]: float(r["file_mtime"] or 0.0) for r in rows}
+
+    def tags_for_note(self, stem: str) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT tag FROM tags WHERE stem = ?", (stem,)).fetchall()
         return [r["tag"] for r in rows]
 
     def notes_with_tag(self, tag: str) -> list[str]:
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT stem FROM tags WHERE tag = ?", (tag.lower(),)
-            ).fetchall()
+            rows = conn.execute("SELECT stem FROM tags WHERE tag = ?", (tag.lower(),)).fetchall()
         return [r["stem"] for r in rows]
 
     def mark_processed(self, stem: str) -> None:
         """Record that an audio file has been processed (reuses notes table stem)."""
         with self._connect() as conn:
             conn.execute(
-                "INSERT OR IGNORE INTO notes (stem, title, path, updated_at) VALUES (?,?,?,?)",
-                (stem, stem, "", datetime.now(UTC).isoformat()),
+                "INSERT OR IGNORE INTO notes (stem, title, path, updated_at, file_mtime) "
+                "VALUES (?,?,?,?,?)",
+                (stem, stem, "", datetime.now(UTC).isoformat(), 0.0),
             )
 
     def is_processed(self, stem: str) -> bool:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT 1 FROM notes WHERE stem = ?", (stem,)
-            ).fetchone()
+            row = conn.execute("SELECT 1 FROM notes WHERE stem = ?", (stem,)).fetchone()
         return row is not None
 
     def processed_stems(self) -> list[str]:
@@ -167,18 +177,40 @@ class VaultIndex:
         title = _extract_title(content, stem)
         tags = _extract_tags(content)
         links = [m.strip().lower().replace(" ", "-") for m in _WIKILINK_RE.findall(content)]
+        mtime = md_path.stat().st_mtime
 
-        self.upsert_note(stem, title, str(md_path))
+        self.upsert_note(stem, title, str(md_path), file_mtime=mtime)
         self.upsert_tags(stem, tags)
         self.upsert_links(stem, links)
 
     def sync_vault(self, vault_path: Path) -> None:
         """Read all vault .md files to upsert newer notes and delete missing ones."""
+        from whisper2obsidian.services.summarizer import summarize_note
+        from whisper2obsidian.services.vector_index import VectorIndex
+
         current_mds = {md.stem: md for md in iter_vault_md(vault_path)}
+        known_mtimes = self.all_note_mtimes()
+        vector_db = VectorIndex()
 
         # 1. Update/Add existing notes from the filesystem
         for stem, path in current_mds.items():
-            self.index_markdown_file(path)
+            actual_mtime = path.stat().st_mtime
+            stored_mtime = known_mtimes.get(stem, 0.0)
+
+            if actual_mtime > stored_mtime:
+                logger.info("Indexing changed note: %s", stem)
+                self.index_markdown_file(path)
+
+                try:
+                    content = path.read_text(encoding="utf-8", errors="replace")
+                    summary = summarize_note(content)
+                    title = _extract_title(content, stem)
+
+                    # Store rel_path for tools
+                    rel_path = str(path.relative_to(vault_path))
+                    vector_db.upsert_note(stem, title, summary, rel_path)
+                except Exception as e:
+                    logger.error("Failed to generate vector summary for %s: %s", stem, e)
 
         # 2. Delete any DB records for notes that no longer exist on disk
         # (Excluding audio processing markers that have path="")
@@ -188,10 +220,12 @@ class VaultIndex:
                 db_stem = r["stem"]
                 if db_stem not in current_mds:
                     self.delete_note(db_stem)
+                    vector_db.delete_note(db_stem)
                     logger.info("Garbage collected deleted note from DB: %s", db_stem)
 
 
 # ── Module-level helpers ─────────────────────────────────────────────────────
+
 
 def _extract_title(content: str, fallback: str) -> str:
     for line in content.splitlines():

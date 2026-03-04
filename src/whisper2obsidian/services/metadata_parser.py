@@ -187,6 +187,7 @@ def _parse_meta_txt(path: Path) -> dict[str, Any]:
     raw_date = data.get("creation_date", "")
     if raw_date:
         import re
+
         # Remove day-of-week prefix ("Wednesday, ")
         cleaned = re.sub(r"^\w+,\s*", "", raw_date.strip())
         # Replace " at " connector with a space
@@ -222,6 +223,7 @@ def _parse_meta_txt(path: Path) -> dict[str, Any]:
     mapped["location"] = ""
     mapped["notes"] = ""
     return mapped
+
 
 def _parse_json(path: Path) -> dict[str, Any]:
     try:
@@ -289,8 +291,7 @@ def _normalise(raw: dict[str, Any], stem: str) -> dict[str, Any]:
     hours, remainder = divmod(total_s, 3600)
     minutes, seconds = divmod(remainder, 60)
     duration_display = (
-        f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours
-        else f"{minutes:02d}:{seconds:02d}"
+        f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
     )
 
     return {

@@ -15,15 +15,18 @@ import asyncio
 import json
 import logging
 import textwrap
+import time
 from typing import Any
 
 import tiktoken
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 
 from whisper2obsidian.config import settings
-from whisper2obsidian.services.groq_rate_limiter import GroqRateLimiter
+from whisper2obsidian.services.llm_rate_limiter import get_rate_limiter
 from whisper2obsidian.state import W2OState
+from whisper2obsidian.tools.vault_tools import get_known_tags, search_similar_notes
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +35,7 @@ CHUNK_TOKEN_LIMIT = 6_000
 
 _enc = tiktoken.get_encoding("cl100k_base")
 
-# Module-level singleton rate limiter (shared across all calls in one run)
-_rate_limiter = GroqRateLimiter()
+_enc = tiktoken.get_encoding("cl100k_base")
 
 # ── Prompt templates ─────────────────────────────────────────────────────────
 
@@ -43,6 +45,7 @@ structured Obsidian notes. Analyse the transcript and return ONLY valid JSON
 (no markdown, no explanation) with this exact schema:
 
 {
+  "thought_process": "Brief step-by-step reasoning on what tools to use and why",
   "title": "concise note title",
   "summary": "2-3 sentence summary",
   "key_points": ["point 1", "point 2"],
@@ -54,36 +57,52 @@ structured Obsidian notes. Analyse the transcript and return ONLY valid JSON
   "dataview_fields": {}
 }
 
+You have access to tools that can search for similar existing notes and retrieve known vault tags. 
+You MUST NOT guess tags or links without verifying them.
+You MUST call `get_known_tags` and `search_similar_notes` before completing the JSON.
+
 Rules:
-- PERSPECTIVE: Write ALL text in the FIRST-PERSON ("I need to", "My idea is") as if YOU dictated this memo. NEVER use third-person ("The user wants", "The speaker").
-- tags: MUST BE AN EMPTY ARRAY `[]` unless the transcript explicitly discusses the exact subject. Do NOT invent abstract connections.
+- PERSPECTIVE: Write ALL text in the FIRST-PERSON ("I need to", "My idea is") as if YOU
+  dictated this memo. NEVER use third-person ("The user wants", "The speaker").
+- tags: MUST BE AN EMPTY ARRAY `[]` unless the transcript explicitly discusses the exact subject.
+  Do NOT invent abstract connections.
 - suggested_links: MUST BE AN EMPTY ARRAY `[]` unless directly, undeniably related.
-- EXPLICIT SPOKEN INSTRUCTIONS: I will often dictate metadata commands at the end of the memo (e.g. "Tag this with CSF", "Link to NotebookLM"). You MUST obey these instructions! If I dictate a tag or link, add it to the arrays, and exclude the command from the final text summary.
+- EXPLICIT SPOKEN INSTRUCTIONS: I will often dictate metadata commands at the end of the memo
+  (e.g. "Tag this with CSF", "Link to NotebookLM"). You MUST obey these instructions! If I dictate
+  a tag or link, add it to the arrays, and exclude the command from the final text summary.
 - mermaid_diagram: provide a Mermaid flowchart string ONLY for process/workflow memos, else null.
 - category_override: ONLY use one of these exact values if the transcript clearly belongs
   to a different category than the metadata claims, else null:
   "books", "course", "generic", "ideas", "meeting", "podcast", "research", "shopping", "todo"
-- dataview_fields: any key::value pairs useful for Dataview queries (e.g. "project", "status").
+- dataview_fields: MUST BE AN EMPTY OBJECT `{}` unless I explicitly dictate a key/value field
+  in the transcript (e.g. "Set project to Whisper2Obsidian"). Do NOT invent or infer fields.
 """).strip()
 
 _CHUNK_SYSTEM_PROMPT = textwrap.dedent("""
 You are summarising a chunk of a longer voice memo transcript.
 Return ONLY a plain text summary of the key points in this chunk (no JSON).
-Be concise, preserve all important facts/names, and strictly use FIRST-PERSON ("I", "my") perspective.
+Be concise, preserve all important facts/names, and strictly use FIRST-PERSON ("I", "my")
+perspective.
 """).strip()
 
 _SYNTHESIS_PROMPT = textwrap.dedent("""
 You are combining chunk summaries of a voice memo into a final structured analysis.
 Use the same JSON schema as before:
-{title, summary, key_points, action_items, tags, suggested_links,
+{thought_process, title, summary, key_points, action_items, tags, suggested_links,
  category_override, mermaid_diagram, dataview_fields}
 
+You have access to tools that can search for similar existing notes and retrieve known vault tags. 
+You MUST NOT guess tags or links without verifying them.
+You MUST call `get_known_tags` and `search_similar_notes` before completing the JSON.
+
 Strictly maintain FIRST-PERSON ("I", "my") perspective.
-tags and suggested_links MUST BE AN EMPTY ARRAY `[]` unless they are undeniably, explicitly the core subject of the transcript. Do NOT invent connections.
+tags and suggested_links MUST BE AN EMPTY ARRAY `[]` unless they are undeniably, explicitly 
+the core subject of the transcript. Do NOT invent connections.
 """).strip()
 
 
 # ── Main node ────────────────────────────────────────────────────────────────
+
 
 def analysis_node(state: W2OState) -> W2OState:
     """Synchronous wrapper – runs the async analysis in an event loop."""
@@ -105,70 +124,154 @@ async def _analysis_async(state: W2OState) -> W2OState:
     metadata: dict[str, Any] = state.get("metadata", {})
     token_count: int = state.get("transcript_token_count", len(_enc.encode(transcript)))
 
-    llm = ChatGroq(
-        model=settings.groq_model,
-        api_key=settings.groq_api_key,
-        temperature=0.3,
-    )
+    if settings.cerebras_api_key:
+        provider = "cerebras"
+        llm = ChatOpenAI(
+            api_key=settings.cerebras_api_key,
+            base_url="https://api.cerebras.ai/v1",
+            model=settings.cerebras_model,
+            temperature=0.3,
+        )
+    else:
+        provider = "groq"
+        llm = ChatGroq(
+            model=settings.groq_model,
+            api_key=settings.groq_api_key,
+            temperature=0.3,
+        )
+
+    rate_limiter = get_rate_limiter(provider)
 
     total_tokens_used = 0
+    start_time = time.perf_counter()
 
     if token_count <= CHUNK_TOKEN_LIMIT:
         # ── Single-pass analysis ─────────────────────────────────────────
         analysis, tokens = await _analyse_single(
-            llm, transcript, existing_tags, existing_links, metadata
+            llm, rate_limiter, transcript, existing_tags, existing_links, metadata
         )
         total_tokens_used = tokens
     else:
         # ── Chunked analysis ─────────────────────────────────────────────
-        logger.info(
-            "Transcript too long (%d tokens) – splitting into chunks", token_count
-        )
+        logger.info("Transcript too long (%d tokens) – splitting into chunks", token_count)
         analysis, tokens = await _analyse_chunked(
-            llm, transcript, existing_tags, existing_links, metadata
+            llm, rate_limiter, transcript, existing_tags, existing_links, metadata
         )
         total_tokens_used = tokens
 
-    logger.info("Analysis complete, Groq tokens used: %d", total_tokens_used)
+    elapsed = time.perf_counter() - start_time
+    logger.info("Analysis complete in %.2fs. Tokens used: %d", elapsed, total_tokens_used)
 
     if settings.show_rate_usage:
-        _log_rate_usage()
+        report = rate_limiter.usage_report()
+        _log_rate_usage(report, provider)
+
+    # Check if analysis actually succeeded (has a title; not just the fallback)
+    analysis_failed = "title" not in analysis or analysis.get("_failed", False)
+
+    if analysis_failed:
+        logger.error(
+            "Analysis produced no usable output – aborting note creation. "
+            "Re-run to retry (transcript sidecar will skip Whisper)."
+        )
 
     return {
         **state,
         "analysis": analysis,
+        "analysis_failed": analysis_failed,
         "groq_tokens_used": total_tokens_used,
     }
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
+async def _invoke_with_retry(llm_callable, messages: list, max_retries: int = 5):
+    """Wraps an LLM call with exponential backoff to handle 429 Too Many Requests."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            return await llm_callable.ainvoke(messages)
+        except Exception as exc:
+            if attempt == max_retries:
+                logger.error("LLM continuously failed after %d attempts: %s", max_retries, exc)
+                raise
+            
+            # Exponential backoff: 2s, 4s, 8s, 16s
+            delay = 2 ** attempt
+            logger.warning(
+                "API Error (Attempt %d/%d). Retrying in %ds...: %s", 
+                attempt, max_retries, delay, str(exc).splitlines()[0]
+            )
+            await asyncio.sleep(delay)
+
+
 async def _analyse_single(
-    llm: ChatGroq,
+    llm: ChatGroq | ChatOpenAI,
+    rate_limiter,
     transcript: str,
     existing_tags: list[str],
     existing_links: dict[str, str],
     metadata: dict,
 ) -> tuple[dict, int]:
+    # Construct base prompt
     user_content = _build_user_message(transcript, existing_tags, existing_links, metadata)
-    estimated = len(_enc.encode(user_content)) + 1200  # prompt + generous reply budget
 
-    await _rate_limiter.await_capacity(estimated)
+    # Track tokens manually for local safety via limiters
+    estimated = len(_enc.encode(user_content)) + 1200
+    await rate_limiter.await_capacity(estimated)
 
-    resp = await llm.ainvoke(
-        [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_content)]
-    )
-    raw = resp.content.strip()
-    actual_tokens = (
-        resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
-    )
-    _rate_limiter.record_usage(actual_tokens)
+    tools = [search_similar_notes, get_known_tags]
+    llm_with_tools = llm.bind_tools(tools)
 
-    return _safe_json(raw), actual_tokens
+    messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_content)]
+
+    actual_tokens = 0
+
+    # Run a simple tool loop
+    for _ in range(3):  # Max 3 tool iterations
+        try:
+            resp = await _invoke_with_retry(llm_with_tools, messages)
+            if resp.usage_metadata:
+                actual_tokens += resp.usage_metadata.get("total_tokens", 0)
+
+            messages.append(resp)
+
+            if not resp.tool_calls:
+                # No more tools, final answer
+                break
+
+            for tool_call in resp.tool_calls:
+                logger.info(
+                    "[bold magenta]🛠️  Agent actively called tool: %s[/bold magenta]",
+                    tool_call["name"],
+                    extra={"markup": True},
+                )
+                if tool_call["name"] == "search_similar_notes":
+                    tool_res = search_similar_notes.invoke(tool_call["args"])
+                elif tool_call["name"] == "get_known_tags":
+                    tool_res = get_known_tags.invoke(tool_call["args"])
+                else:
+                    tool_res = f"Unknown tool {tool_call['name']}"
+
+                messages.append(ToolMessage(content=str(tool_res), tool_call_id=tool_call["id"]))
+        except Exception as e:
+            logger.error("LLM evaluation / tool call failed: %s", e)
+            break
+
+    # If the LLM stopped using tools but didn't output JSON cleanly, or if it hit iteration limit
+    final_output = messages[-1].content
+    raw = final_output.strip()
+
+    # Track failure: no output at all means LLM failed unrecoverably
+    any_failed = not raw
+
+    rate_limiter.record_usage(actual_tokens)
+    return _safe_json(raw, failed=any_failed), actual_tokens
 
 
 async def _analyse_chunked(
-    llm: ChatGroq,
+    llm: ChatGroq | ChatOpenAI,
+    rate_limiter,
     transcript: str,
     existing_tags: list[str],
     existing_links: dict[str, str],
@@ -181,17 +284,21 @@ async def _analyse_chunked(
     for i, chunk in enumerate(chunks, 1):
         logger.info("Summarising chunk %d/%d", i, len(chunks))
         estimated = len(_enc.encode(chunk)) + 600
-        await _rate_limiter.await_capacity(estimated)
+        await rate_limiter.await_capacity(estimated)
 
-        resp = await llm.ainvoke(
-            [SystemMessage(content=_CHUNK_SYSTEM_PROMPT), HumanMessage(content=chunk)]
-        )
+        try:
+            resp = await _invoke_with_retry(
+                llm,
+                [SystemMessage(content=_CHUNK_SYSTEM_PROMPT), HumanMessage(content=chunk)]
+            )
+        except Exception as e:
+            logger.error("Chunk processing failed: %s", e)
+            continue
+
         actual = (
-            resp.usage_metadata.get("total_tokens", estimated)
-            if resp.usage_metadata
-            else estimated
+            resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
         )
-        _rate_limiter.record_usage(actual)
+        rate_limiter.record_usage(actual)
         total_tokens += actual
         summaries.append(resp.content.strip())
 
@@ -199,18 +306,51 @@ async def _analyse_chunked(
     combined = "\n\n---\n\n".join(summaries)
     synth_user = _build_user_message(combined, existing_tags, existing_links, metadata)
     estimated = len(_enc.encode(synth_user)) + 1200
-    await _rate_limiter.await_capacity(estimated)
+    await rate_limiter.await_capacity(estimated)
 
-    resp = await llm.ainvoke(
-        [SystemMessage(content=_SYNTHESIS_PROMPT), HumanMessage(content=synth_user)]
-    )
-    actual = (
-        resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
-    )
-    _rate_limiter.record_usage(actual)
-    total_tokens += actual
+    tools = [search_similar_notes, get_known_tags]
+    llm_with_tools = llm.bind_tools(tools)
 
-    return _safe_json(resp.content.strip()), total_tokens
+    messages = [SystemMessage(content=_SYNTHESIS_PROMPT), HumanMessage(content=synth_user)]
+
+    actual_tokens = 0
+    # Run a simple tool loop
+    for _ in range(3):  # Max 3 tool iterations
+        try:
+            resp = await _invoke_with_retry(llm_with_tools, messages)
+            if resp.usage_metadata:
+                actual_tokens += resp.usage_metadata.get("total_tokens", 0)
+
+            messages.append(resp)
+
+            if not getattr(resp, "tool_calls", None):
+                break
+
+            for tool_call in resp.tool_calls:
+                logger.info(
+                    "[bold magenta]🛠️  Agent actively called tool: %s[/bold magenta]",
+                    tool_call["name"],
+                    extra={"markup": True},
+                )
+                if tool_call["name"] == "search_similar_notes":
+                    tool_res = search_similar_notes.invoke(tool_call["args"])
+                elif tool_call["name"] == "get_known_tags":
+                    tool_res = get_known_tags.invoke(tool_call["args"])
+                else:
+                    tool_res = f"Unknown tool {tool_call['name']}"
+
+                messages.append(ToolMessage(content=str(tool_res), tool_call_id=tool_call["id"]))
+        except Exception as e:
+            logger.error("LLM synthesis evaluation / tool call failed: %s", e)
+            break
+
+    rate_limiter.record_usage(actual_tokens)
+    total_tokens += actual_tokens
+
+    final_output = messages[-1].content
+    # Track failure: no output at all means LLM failed unrecoverably
+    any_synth_failed = not final_output.strip()
+    return _safe_json(final_output.strip(), failed=any_synth_failed), total_tokens
 
 
 def _build_user_message(
@@ -255,16 +395,19 @@ def _split_transcript(text: str, max_tokens: int) -> list[str]:
     return chunks
 
 
-def _safe_json(text: str) -> dict:
+def _safe_json(text: str, failed: bool = False) -> dict:
     """Parse JSON, strip markdown fences if present."""
     if text.startswith("```"):
         lines = text.splitlines()
         text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
     try:
-        return json.loads(text)
+        result = json.loads(text)
+        result["_failed"] = failed
+        return result
     except json.JSONDecodeError as exc:
         logger.warning("Failed to parse LLM JSON response: %s", exc)
         return {
+            "_failed": True,  # mark as unrecoverable
             "title": "Untitled Memo",
             "summary": text[:500],
             "key_points": [],
@@ -277,13 +420,12 @@ def _safe_json(text: str) -> dict:
         }
 
 
-def _log_rate_usage() -> None:
-    report = _rate_limiter.usage_report()
+def _log_rate_usage(report: dict, provider: str) -> None:
     from rich.console import Console
     from rich.table import Table
 
     console = Console()
-    table = Table(title="Groq Rate Usage", show_header=True)
+    table = Table(title=f"{provider.capitalize()} Rate Usage", show_header=True)
     table.add_column("Metric")
     table.add_column("Used")
     table.add_column("Limit")

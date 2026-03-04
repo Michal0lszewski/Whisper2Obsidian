@@ -1,5 +1,5 @@
 """
-GroqRateLimiter – sliding-window guard to prevent 429 errors on Groq's free tier.
+LLMRateLimiter – sliding-window guard to prevent 429 errors on free tiers.
 
 Tracks:
   - RPM  (requests per minute)  via sliding 60-second window
@@ -7,7 +7,7 @@ Tracks:
   - RPD  (requests per day)     via daily counter reset at midnight
 
 Usage:
-    limiter = GroqRateLimiter()           # uses settings defaults
+    limiter = get_rate_limiter("groq")
     await limiter.await_capacity(estimated_tokens=2000)
     response = client.chat(...)
     limiter.record_usage(actual_tokens=response.usage.total_tokens)
@@ -31,21 +31,21 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _TokenEvent:
     """A single API call recorded in the sliding window."""
+
     timestamp: float
     tokens: int
 
 
 @dataclass
-class GroqRateLimiter:
+class LLMRateLimiter:
     """
-    Thread-safe (asyncio) sliding-window rate limiter for Groq API.
-
-    Defaults are read from settings but can be overridden per-instance.
+    Thread-safe (asyncio) sliding-window rate limiter for LLM APIs.
     """
 
-    rpm_limit: int = field(default_factory=lambda: settings.groq_rpm_limit)
-    tpm_limit: int = field(default_factory=lambda: settings.groq_tpm_limit)
-    rpd_limit: int = field(default_factory=lambda: settings.groq_rpd_limit)
+    provider: str
+    rpm_limit: int
+    tpm_limit: int
+    rpd_limit: int
 
     # Internal state
     _window: deque[_TokenEvent] = field(default_factory=deque, init=False, repr=False)
@@ -60,7 +60,7 @@ class GroqRateLimiter:
         Block (sleep) until there is capacity for `estimated_tokens` tokens
         within the current minute window and request budget for today.
 
-        Call this BEFORE making a Groq API request.
+        Call this BEFORE making an API request.
         """
         async with self._lock:
             while True:
@@ -144,11 +144,34 @@ class GroqRateLimiter:
             self._day_requests = 0
             logger.debug("RateLimiter: daily counter reset for %s", today)
 
-    def _seconds_until_slot(
-        self, now: float, tokens: int, rpm_ok: bool, tpm_ok: bool
-    ) -> float:
+    def _seconds_until_slot(self, now: float, tokens: int, rpm_ok: bool, tpm_ok: bool) -> float:
         """Estimate seconds to sleep until at least RPM or TPM constraint is released."""
         if self._window:
             oldest = self._window[0].timestamp
             return max(0.5, 60.0 - (now - oldest) + 0.1)
         return 1.0
+
+
+# ── Global instances lookup ─────────────────────────────────────────────
+_limiters: dict[str, LLMRateLimiter] = {}
+
+
+def get_rate_limiter(provider: str) -> LLMRateLimiter:
+    """Return a shared singleton rate limiter instance for the requested provider."""
+    provider = provider.lower()
+    if provider not in _limiters:
+        if provider == "cerebras":
+            _limiters[provider] = LLMRateLimiter(
+                provider="cerebras",
+                rpm_limit=settings.cerebras_rpm_limit,
+                tpm_limit=settings.cerebras_tpm_limit,
+                rpd_limit=settings.cerebras_rpd_limit,
+            )
+        else:  # defaulting to Groq sizes
+            _limiters[provider] = LLMRateLimiter(
+                provider="groq",
+                rpm_limit=settings.groq_rpm_limit,
+                tpm_limit=settings.groq_tpm_limit,
+                rpd_limit=settings.groq_rpd_limit,
+            )
+    return _limiters[provider]

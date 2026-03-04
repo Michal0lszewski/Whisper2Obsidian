@@ -58,8 +58,8 @@ def watcher_node(state: W2OState) -> W2OState:
             f
             for f in audio_folder.iterdir()
             if f.suffix.lower() == ".m4a"
-            and f.stem not in processed_db_stems           # fast DB check
-            and not _note_exists_in_inbox(f.stem)          # filesystem safety-net
+            and f.stem not in processed_db_stems  # fast DB check
+            and not _note_exists_in_inbox(f.stem)  # filesystem safety-net
         ),
         key=lambda f: f.stat().st_mtime,
     )
@@ -86,11 +86,10 @@ def watcher_node(state: W2OState) -> W2OState:
         "audio_path": str(chosen),
         "metadata": metadata,
         "already_processed": list(processed_db_stems),
-        "transcript_cached": txt_exists,     # signals transcription_node
+        "transcript_cached": txt_exists,  # signals transcription_node
     }
 
 
 def has_new_memo(state: W2OState) -> str:
     """Conditional edge: route to transcription or END."""
     return "transcription" if state.get("audio_path") else "end"
-

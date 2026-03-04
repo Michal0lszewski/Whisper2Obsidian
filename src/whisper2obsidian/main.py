@@ -59,6 +59,11 @@ def _parse_args() -> argparse.Namespace:
         help="Print Groq rate-usage table after each processed memo",
     )
     parser.add_argument(
+        "--no-harvest",
+        action="store_true",
+        help="Skip the automatic vault harvest at startup",
+    )
+    parser.add_argument(
         "--log-level",
         default=settings.log_level,
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -72,6 +77,7 @@ def run_once(show_rate_usage: bool = False) -> dict:
     # Override show_rate_usage at runtime if CLI flag is set
     if show_rate_usage:
         import os
+
         os.environ["SHOW_RATE_USAGE"] = "true"
 
     graph = compile_graph()
@@ -89,9 +95,7 @@ def run_once(show_rate_usage: bool = False) -> dict:
     final_state = graph.invoke(initial_state)
 
     if final_state.get("note_path"):
-        console.print(
-            f"[bold green]✓[/] Note written: {final_state['note_path']}"
-        )
+        console.print(f"[bold green]✓[/] Note written: {final_state['note_path']}")
     elif final_state.get("audio_path") == "":
         console.print("[yellow]No new voice memos found.[/yellow]")
     else:
@@ -109,17 +113,34 @@ def main() -> None:
     log = logging.getLogger(__name__)
 
     # Ensure DB and vault dirs are initialised
-    VaultIndex(settings.processed_db)
+    index = VaultIndex(settings.processed_db)
+
+    if not args.no_harvest:
+        log.info("Starting automatic vault harvest before accepting new memos...")
+        try:
+            index.sync_vault(settings.vault_path)
+            log.info("Vault harvest complete!")
+        except Exception as e:
+            log.error("Error during automatic harvest (skipping): %s", e)
 
     console.rule("[bold blue]Whisper2Obsidian[/bold blue]")
     console.print(f"  Audio folder : {settings.audio_folder}")
     console.print(f"  Vault inbox  : {settings.inbox_path}")
     console.print(f"  Whisper model: {settings.whisper_model}")
-    console.print(f"  Groq model   : {settings.groq_model}")
-    console.print(
-        f"  Rate limits  : {settings.groq_rpm_limit} RPM / "
-        f"{settings.groq_tpm_limit} TPM / {settings.groq_rpd_limit} RPD"
-    )
+
+    if settings.cerebras_api_key:
+        console.print(f"  Cerebras model: {settings.cerebras_model}")
+        console.print(
+            f"  Rate limits  : {settings.cerebras_rpm_limit} RPM / "
+            f"{settings.cerebras_tpm_limit} TPM / {settings.cerebras_rpd_limit} RPD"
+        )
+    else:
+        console.print(f"  Groq model   : {settings.groq_model}")
+        console.print(
+            f"  Rate limits  : {settings.groq_rpm_limit} RPM / "
+            f"{settings.groq_tpm_limit} TPM / {settings.groq_rpd_limit} RPD"
+        )
+
     console.rule()
 
     if args.once:

@@ -32,10 +32,8 @@ htmlcov/
 .AppleDouble
 .LSOverride
 
-# Data / generated
-data/*.db
-data/*.json
-data/*.log
+# Data / generated (SQLite DB, ChromaDB vector store, transcripts)
+data/
 
 # IDE
 .idea/

@@ -195,6 +195,46 @@ This ensures that any notes you have created or edited manually inside Obsidian 
 
 ---
 
+## Data Storage
+
+> 🔒 **Privacy:** Both databases live in `data/` and are git-ignored. Your vault content never leaves your machine.
+
+### SQLite — `data/w2o.db`
+
+Three tables power the pipeline's "memory":
+
+| Table | Columns | Purpose |
+|---|---|---|
+| `processed_files` | `stem TEXT PRIMARY KEY`, `processed_at TEXT` | Tracks which audio file stems have already been turned into notes, preventing double-processing |
+| `notes` | `stem TEXT PK`, `title TEXT`, `path TEXT`, `file_mtime REAL` | Maps every vault note stem to its title and file path; `file_mtime` is used by the harvester to detect edits |
+| `note_tags` | `stem TEXT`, `tag TEXT` | Many-to-many: which tags each note has. Used by `get_known_tags` to return your full tag vocabulary to the LLM |
+| `note_links` | `stem TEXT`, `link TEXT` | Many-to-many: explicit wiki-links between notes — stored for future cross-link analysis |
+
+**Key operations:**
+- `mark_processed(stem)` — called by `file_writer_node` once a note is successfully written
+- `all_tags()` — called by the `get_known_tags` tool; returns a deduplicated list of all tags across the vault
+- Harvester: detects **deleted notes** (DB rows with no matching `.md` file) and garbage-collects their entries
+
+### ChromaDB — `data/chroma/` (Collection: `vault_notes`)
+
+Each entry in the `vault_notes` collection represents one Obsidian note:
+
+| Field | Type | Example |
+|---|---|---|
+| **ID** | string | `2026-02-27-idea` (the note stem) |
+| **document** | string (~500 chars) | LLM-generated dense prose summary of the note |
+| **metadata.title** | string | `💡 AI Newsletter Generator` |
+| **metadata.path** | string | `00 Notes/2026-02-27-idea.md` (vault-relative) |
+| **embedding** | float[384] | Semantic vector from `all-MiniLM-L6-v2` |
+
+**How it's used:**
+- When the LLM calls `search_similar_notes(query)`, ChromaDB runs a **cosine similarity search** over the 384-dimensional embeddings
+- The top-N matches (stem + title + summary) are returned to the LLM so it can decide whether to add a `[[wikilink]]` to the note
+- The 384-dim vectors come from ChromaDB's default **`all-MiniLM-L6-v2`** sentence transformer — compact, fast, local, no API call required
+
+---
+
+
 ## Resetting the Pipeline
 
 If you want to quickly force Whisper2Obsidian to reprocess your Voice Record Pro audio files as if they were brand new, you can completely clear the internal tracking database.

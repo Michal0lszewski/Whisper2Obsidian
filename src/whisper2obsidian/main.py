@@ -59,6 +59,11 @@ def _parse_args() -> argparse.Namespace:
         help="Print Groq rate-usage table after each processed memo",
     )
     parser.add_argument(
+        "--no-harvest",
+        action="store_true",
+        help="Skip the automatic vault harvest at startup",
+    )
+    parser.add_argument(
         "--log-level",
         default=settings.log_level,
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -109,7 +114,15 @@ def main() -> None:
     log = logging.getLogger(__name__)
 
     # Ensure DB and vault dirs are initialised
-    VaultIndex(settings.processed_db)
+    index = VaultIndex(settings.processed_db)
+    
+    if not args.no_harvest:
+        log.info("Starting automatic vault harvest before accepting new memos...")
+        try:
+            index.sync_vault(settings.vault_path)
+            log.info("Vault harvest complete!")
+        except Exception as e:
+            log.error("Error during automatic harvest (skipping): %s", e)
 
     console.rule("[bold blue]Whisper2Obsidian[/bold blue]")
     console.print(f"  Audio folder : {settings.audio_folder}")

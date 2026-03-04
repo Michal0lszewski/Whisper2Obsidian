@@ -82,9 +82,10 @@ cp .env.example .env
 nano .env
 
 # 5. Run
-whisper2obsidian          # daemon mode (polls every 60s)
+whisper2obsidian          # daemon mode (polls every 60s, auto-harvests on startup)
 whisper2obsidian --once   # process one memo and exit
 whisper2obsidian --show-rate-usage   # show Groq token/request counters
+whisper2obsidian --no-harvest        # skip parsing the existing vault on startup
 ```
 
 ---
@@ -175,17 +176,15 @@ The dual check makes the system robust against DB resets and manual vault edits.
 
 ---
 
-## Indexing Existing Vault Notes (First-Time Usage)
+## Indexing Existing Vault Notes (First-Time Usage & Syncing)
 
 To empower the semantic search functionality, Whisper2Obsidian maintains a local `ChromaDB` vector index summarizing your historical Obsidian notes and an `SQLite` database of your existing tags.
 
-**If you are connecting this tool to an existing Obsidian vault for the first time, you MUST run the harvest script before processing new audio files.** 
+**When you launch Whisper2Obsidian (`whisper2obsidian`), it will automatically run a "harvest" process before it begins listening for new voice memos.** 
 
-This ensures that your incoming voice memos can accurately link to your old thoughts and use your established tagging vocabulary.
+This ensures that any notes you have created or edited manually inside Obsidian are picked up by the system, allowing incoming voice memos to accurately link to your newest thoughts and use your established tagging vocabulary.
 
-```bash
-uv run python src/whisper2obsidian/scripts/vault_harvest.py
-```
+*(If you have a massive vault and want to skip this startup check to begin transcribing immediately, you can pass the `--no-harvest` flag, or run the script manually at `uv run python src/whisper2obsidian/scripts/vault_harvest.py`)*
 
 **What it does:**
 1. Scans all `.md` files in your configured `VAULT_PATH`.

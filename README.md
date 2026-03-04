@@ -213,7 +213,16 @@ Three tables power the pipeline's "memory":
 **Key operations:**
 - `mark_processed(stem)` — called by `file_writer_node` once a note is successfully written
 - `all_tags()` — called by the `get_known_tags` tool; returns a deduplicated list of all tags across the vault
-- Harvester: detects **deleted notes** (DB rows with no matching `.md` file) and garbage-collects their entries
+- Harvester: **detects deleted notes** (DB rows with no matching `.md` file) and garbage-collects them — this cascades across all three SQLite tables (`notes`, `tags`, `links`) AND removes the embedding from ChromaDB. No orphaned tags or stale vectors are left behind.
+
+> **What happens when you delete a note from Obsidian?**
+> The next time Whisper2Obsidian starts (or the harvester runs), it detects the missing file and automatically:
+> 1. Removes its row from the `notes` table
+> 2. Removes **all its tags** from the `tags` table — `get_known_tags` will never return tags from deleted notes
+> 3. Removes its outgoing links from the `links` table
+> 4. Deletes its 384-dim embedding from the ChromaDB `vault_notes` collection
+>
+> The only window where stale data could exist is between deleting the note and the next startup — no incorrect notes or links will be created in that window.
 
 ### ChromaDB — `data/chroma/` (Collection: `vault_notes`)
 

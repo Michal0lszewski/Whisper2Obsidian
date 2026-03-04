@@ -57,6 +57,9 @@ structured Obsidian notes. Analyse the transcript and return ONLY valid JSON
   "dataview_fields": {}
 }
 
+You have access to tools that can search for similar existing notes and retrieve known vault tags. 
+You MUST use these tools if you need to find relevant notes to link to or appropriate tags to apply.
+
 Rules:
 - PERSPECTIVE: Write ALL text in the FIRST-PERSON ("I need to", "My idea is") as if YOU dictated this memo. NEVER use third-person ("The user wants", "The speaker").
 - tags: MUST BE AN EMPTY ARRAY `[]` unless the transcript explicitly discusses the exact subject. Do NOT invent abstract connections.
@@ -80,6 +83,9 @@ You are combining chunk summaries of a voice memo into a final structured analys
 Use the same JSON schema as before:
 {title, summary, key_points, action_items, tags, suggested_links,
  category_override, mermaid_diagram, dataview_fields}
+
+You have access to tools that can search for similar existing notes and retrieve known vault tags. 
+You MUST use these tools if you need to find relevant notes to link to or appropriate tags to apply.
 
 Strictly maintain FIRST-PERSON ("I", "my") perspective.
 tags and suggested_links MUST BE AN EMPTY ARRAY `[]` unless they are undeniably, explicitly the core subject of the transcript. Do NOT invent connections.
@@ -200,7 +206,11 @@ async def _analyse_single(
                 break
                 
             for tool_call in resp.tool_calls:
-                logger.info("Agent called tool: %s", tool_call["name"])
+                logger.info(
+                    "[bold magenta]🛠️  Agent actively called tool: %s[/bold magenta]", 
+                    tool_call["name"], 
+                    extra={"markup": True}
+                )
                 if tool_call["name"] == "search_similar_notes":
                     tool_res = search_similar_notes.invoke(tool_call["args"])
                 elif tool_call["name"] == "get_known_tags":
@@ -281,7 +291,11 @@ async def _analyse_chunked(
                 break
                 
             for tool_call in resp.tool_calls:
-                logger.info("Agent called tool: %s", tool_call["name"])
+                logger.info(
+                    "[bold magenta]🛠️  Agent actively called tool: %s[/bold magenta]", 
+                    tool_call["name"], 
+                    extra={"markup": True}
+                )
                 if tool_call["name"] == "search_similar_notes":
                     tool_res = search_similar_notes.invoke(tool_call["args"])
                 elif tool_call["name"] == "get_known_tags":

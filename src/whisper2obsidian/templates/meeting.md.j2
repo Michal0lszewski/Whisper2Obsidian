@@ -1,17 +1,19 @@
 ---
-tags:
-{% for tag in tags %}  - {{ tag }}
-{% endfor %}date: {{ metadata.date_display }}
+tags: [{% if tags %}{{ tags | join(', ') }}{% endif %}]
+date: {{ metadata.date_display }}
 duration: "{{ metadata.duration_display }}"
 source: "{{ metadata.title }}"
 category: "meeting"
 language: "{{ language }}"
 status:: inbox
-{% for key, val in dataview_fields.items() %}{{ key }}:: {{ val }}
-{% endfor %}---
+---
 
 # 📋 {{ title }}
 
+{% if dataview_fields %}
+{% for key, val in dataview_fields.items() %}**{{ key }}**:: {{ val }}
+{% endfor %}
+{% endif %}
 > [!IMPORTANT] Meeting Summary
 > {{ summary }}
 

@@ -45,6 +45,7 @@ structured Obsidian notes. Analyse the transcript and return ONLY valid JSON
 (no markdown, no explanation) with this exact schema:
 
 {
+  "thought_process": "Brief step-by-step reasoning on what tools to use and why",
   "title": "concise note title",
   "summary": "2-3 sentence summary",
   "key_points": ["point 1", "point 2"],
@@ -57,7 +58,7 @@ structured Obsidian notes. Analyse the transcript and return ONLY valid JSON
 }
 
 You have access to tools that can search for similar existing notes and retrieve known vault tags. 
-You MUST use these tools if you need to find relevant notes to link to or appropriate tags to apply.
+You MUST NOT guess tags or links without verifying them. You MUST call `get_known_tags` and `search_similar_notes` before completing the JSON.
 
 Rules:
 - PERSPECTIVE: Write ALL text in the FIRST-PERSON ("I need to", "My idea is") as if YOU
@@ -85,11 +86,11 @@ perspective.
 _SYNTHESIS_PROMPT = textwrap.dedent("""
 You are combining chunk summaries of a voice memo into a final structured analysis.
 Use the same JSON schema as before:
-{title, summary, key_points, action_items, tags, suggested_links,
+{thought_process, title, summary, key_points, action_items, tags, suggested_links,
  category_override, mermaid_diagram, dataview_fields}
 
 You have access to tools that can search for similar existing notes and retrieve known vault tags. 
-You MUST use these tools if you need to find relevant notes to link to or appropriate tags to apply.
+You MUST NOT guess tags or links without verifying them. You MUST call `get_known_tags` and `search_similar_notes` before completing the JSON.
 
 Strictly maintain FIRST-PERSON ("I", "my") perspective.
 tags and suggested_links MUST BE AN EMPTY ARRAY `[]` unless they are undeniably, explicitly 

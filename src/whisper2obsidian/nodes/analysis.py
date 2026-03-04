@@ -173,6 +173,25 @@ async def _analysis_async(state: W2OState) -> W2OState:
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
+async def _invoke_with_retry(llm_callable, messages: list, max_retries: int = 5):
+    """Wraps an LLM call with exponential backoff to handle 429 Too Many Requests."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            return await llm_callable.ainvoke(messages)
+        except Exception as exc:
+            if attempt == max_retries:
+                logger.error("LLM continuously failed after %d attempts: %s", max_retries, exc)
+                raise
+            
+            # Exponential backoff: 2s, 4s, 8s, 16s
+            delay = 2 ** attempt
+            logger.warning(
+                "API Error (Attempt %d/%d). Retrying in %ds...: %s", 
+                attempt, max_retries, delay, str(exc).splitlines()[0]
+            )
+            await asyncio.sleep(delay)
+
+
 async def _analyse_single(
     llm: ChatGroq | ChatOpenAI,
     rate_limiter,
@@ -198,7 +217,7 @@ async def _analyse_single(
     # Run a simple tool loop
     for _ in range(3):  # Max 3 tool iterations
         try:
-            resp = await llm_with_tools.ainvoke(messages)
+            resp = await _invoke_with_retry(llm_with_tools, messages)
             if resp.usage_metadata:
                 actual_tokens += resp.usage_metadata.get("total_tokens", 0)
 
@@ -251,9 +270,15 @@ async def _analyse_chunked(
         estimated = len(_enc.encode(chunk)) + 600
         await rate_limiter.await_capacity(estimated)
 
-        resp = await llm.ainvoke(
-            [SystemMessage(content=_CHUNK_SYSTEM_PROMPT), HumanMessage(content=chunk)]
-        )
+        try:
+            resp = await _invoke_with_retry(
+                llm,
+                [SystemMessage(content=_CHUNK_SYSTEM_PROMPT), HumanMessage(content=chunk)]
+            )
+        except Exception as e:
+            logger.error("Chunk processing failed: %s", e)
+            continue
+            
         actual = (
             resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
         )
@@ -276,7 +301,7 @@ async def _analyse_chunked(
     # Run a simple tool loop
     for _ in range(3):  # Max 3 tool iterations
         try:
-            resp = await llm_with_tools.ainvoke(messages)
+            resp = await _invoke_with_retry(llm_with_tools, messages)
             if resp.usage_metadata:
                 actual_tokens += resp.usage_metadata.get("total_tokens", 0)
 

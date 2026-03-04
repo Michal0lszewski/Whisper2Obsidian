@@ -128,11 +128,20 @@ def main() -> None:
     console.print(f"  Audio folder : {settings.audio_folder}")
     console.print(f"  Vault inbox  : {settings.inbox_path}")
     console.print(f"  Whisper model: {settings.whisper_model}")
-    console.print(f"  Groq model   : {settings.groq_model}")
-    console.print(
-        f"  Rate limits  : {settings.groq_rpm_limit} RPM / "
-        f"{settings.groq_tpm_limit} TPM / {settings.groq_rpd_limit} RPD"
-    )
+
+    if settings.cerebras_api_key:
+        console.print(f"  Cerebras model: {settings.cerebras_model}")
+        console.print(
+            f"  Rate limits  : {settings.cerebras_rpm_limit} RPM / "
+            f"{settings.cerebras_tpm_limit} TPM / {settings.cerebras_rpd_limit} RPD"
+        )
+    else:
+        console.print(f"  Groq model   : {settings.groq_model}")
+        console.print(
+            f"  Rate limits  : {settings.groq_rpm_limit} RPM / "
+            f"{settings.groq_tpm_limit} TPM / {settings.groq_rpd_limit} RPD"
+        )
+        
     console.rule()
 
     if args.once:

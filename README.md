@@ -107,7 +107,32 @@ whisper2obsidian --no-harvest        # skip parsing the existing vault on startu
 
 ---
 
-## Voice Record Pro Metadata
+### Choosing Your LLM Provider
+
+The provider is selected automatically based on which API key is present in `.env`:
+
+| Scenario | Active Provider |
+|---|---|
+| `CEREBRAS_API_KEY` is set | **Cerebras** (priority) |
+| Only `GROQ_API_KEY` is set | **Groq** (fallback) |
+| Both keys set | **Cerebras** wins |
+
+To switch providers **without deleting your keys**, comment out the one you don't want:
+
+```bash
+# To use Cerebras (fast, high token limits) — keep this line active:
+CEREBRAS_API_KEY=sk-...
+
+# To switch to Groq — comment out CEREBRAS_API_KEY above and uncomment below:
+# CEREBRAS_API_KEY=sk-...
+GROQ_API_KEY=gsk_...
+```
+
+The active provider and its rate limits are always shown in the startup banner.
+
+---
+
+
 
 The pipeline reads the companion `.meta.txt` file that Voice Record Pro (≥ 4.x)
 writes alongside each recording. Fields extracted:

@@ -65,7 +65,7 @@ def transcription_node(state: W2OState) -> W2OState:
     if not audio_path:
         return {**state, "errors": ["transcription_node: audio_path is empty"]}
 
-    txt_path  = transcript_txt_path(audio_path)
+    txt_path = transcript_txt_path(audio_path)
     json_path = transcript_json_path(audio_path)
 
     # ── 1. Cache hit: load transcript from <stem>.txt ─────────────────────────
@@ -86,7 +86,10 @@ def transcription_node(state: W2OState) -> W2OState:
 
                 logger.info(
                     "Transcript loaded from cache: %s (%d chars, ~%d tokens, lang=%s)",
-                    txt_path.name, len(transcript), token_count, language,
+                    txt_path.name,
+                    len(transcript),
+                    token_count,
+                    language,
                 )
                 return {
                     **state,
@@ -113,16 +116,19 @@ def transcription_node(state: W2OState) -> W2OState:
     except Exception as exc:
         logger.exception("Transcription failed: %s", exc)
         return {**state, "errors": [f"Transcription error: {exc}"]}
-    
+
     elapsed = time.perf_counter() - start_time
 
     transcript: str = result.get("text", "").strip()
-    language: str   = result.get("language", "unknown")
+    language: str = result.get("language", "unknown")
     token_count: int = len(_enc.encode(transcript))
 
     logger.info(
         "Transcription complete in %.2fs: %d chars, ~%d tokens, language=%s",
-        elapsed, len(transcript), token_count, language,
+        elapsed,
+        len(transcript),
+        token_count,
+        language,
     )
 
     # ── 3. Write <stem>.txt and <stem>.json ───────────────────────────────────

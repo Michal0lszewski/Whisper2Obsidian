@@ -23,6 +23,7 @@ def _make_audio(dir: Path, name: str, mtime_offset: float = 0) -> Path:
     f.write_bytes(b"\x00" * 100)
     t = time.time() + mtime_offset
     import os
+
     os.utime(f, (t, t))
     return f
 

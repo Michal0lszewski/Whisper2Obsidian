@@ -34,13 +34,17 @@ def note_writer_node(state: W2OState) -> W2OState:
     # Both raw category values are normalised through CATEGORY_MAP so the LLM
     # can say "books" and still get the correct "books.md.j2" template.
     raw_override = (analysis.get("category_override") or "").strip().lower()
-    
+
     llm_category = CATEGORY_MAP.get(raw_override)
     user_category = metadata.get("template_key")
 
     # If LLM failed to pick a specific category (or guessed general/default),
     # but the user *explicitly* assigned one in Voice Record Pro, honor the user's choice!
-    if (not llm_category or llm_category == "default") and user_category and user_category != "default":
+    if (
+        (not llm_category or llm_category == "default")
+        and user_category
+        and user_category != "default"
+    ):
         template_key = user_category
     else:
         template_key = llm_category or user_category or "default"
@@ -79,7 +83,7 @@ def note_writer_node(state: W2OState) -> W2OState:
     }
 
     note_markdown = template.render(**context)
-    
+
     # Filename uses the category. file_writer_node will append date and handle collisions.
     note_filename = template_key.lower()
 
@@ -93,6 +97,7 @@ def note_writer_node(state: W2OState) -> W2OState:
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
+
 
 def _slugify(value: str) -> str:
     """Convert a string to a filesystem-friendly slug (Obsidian-safe)."""

@@ -77,6 +77,7 @@ def run_once(show_rate_usage: bool = False) -> dict:
     # Override show_rate_usage at runtime if CLI flag is set
     if show_rate_usage:
         import os
+
         os.environ["SHOW_RATE_USAGE"] = "true"
 
     graph = compile_graph()
@@ -94,9 +95,7 @@ def run_once(show_rate_usage: bool = False) -> dict:
     final_state = graph.invoke(initial_state)
 
     if final_state.get("note_path"):
-        console.print(
-            f"[bold green]✓[/] Note written: {final_state['note_path']}"
-        )
+        console.print(f"[bold green]✓[/] Note written: {final_state['note_path']}")
     elif final_state.get("audio_path") == "":
         console.print("[yellow]No new voice memos found.[/yellow]")
     else:
@@ -115,7 +114,7 @@ def main() -> None:
 
     # Ensure DB and vault dirs are initialised
     index = VaultIndex(settings.processed_db)
-    
+
     if not args.no_harvest:
         log.info("Starting automatic vault harvest before accepting new memos...")
         try:
@@ -141,7 +140,7 @@ def main() -> None:
             f"  Rate limits  : {settings.groq_rpm_limit} RPM / "
             f"{settings.groq_tpm_limit} TPM / {settings.groq_rpd_limit} RPD"
         )
-        
+
     console.rule()
 
     if args.once:

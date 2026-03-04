@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _TokenEvent:
     """A single API call recorded in the sliding window."""
+
     timestamp: float
     tokens: int
 
@@ -143,17 +144,17 @@ class LLMRateLimiter:
             self._day_requests = 0
             logger.debug("RateLimiter: daily counter reset for %s", today)
 
-    def _seconds_until_slot(
-        self, now: float, tokens: int, rpm_ok: bool, tpm_ok: bool
-    ) -> float:
+    def _seconds_until_slot(self, now: float, tokens: int, rpm_ok: bool, tpm_ok: bool) -> float:
         """Estimate seconds to sleep until at least RPM or TPM constraint is released."""
         if self._window:
             oldest = self._window[0].timestamp
             return max(0.5, 60.0 - (now - oldest) + 0.1)
         return 1.0
 
+
 # ── Global instances lookup ─────────────────────────────────────────────
 _limiters: dict[str, LLMRateLimiter] = {}
+
 
 def get_rate_limiter(provider: str) -> LLMRateLimiter:
     """Return a shared singleton rate limiter instance for the requested provider."""
@@ -166,7 +167,7 @@ def get_rate_limiter(provider: str) -> LLMRateLimiter:
                 tpm_limit=settings.cerebras_tpm_limit,
                 rpd_limit=settings.cerebras_rpd_limit,
             )
-        else: # defaulting to Groq sizes
+        else:  # defaulting to Groq sizes
             _limiters[provider] = LLMRateLimiter(
                 provider="groq",
                 rpm_limit=settings.groq_rpm_limit,

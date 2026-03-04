@@ -28,7 +28,7 @@ def vault_indexer_node(state: W2OState) -> W2OState:
     index.sync_vault(settings.vault_path)
 
     existing_tags = index.all_tags()
-    existing_links = index.all_notes()   # {stem: title}
+    existing_links = index.all_notes()  # {stem: title}
 
     logger.info(
         "Vault index: %d tags, %d notes available for cross-linking",

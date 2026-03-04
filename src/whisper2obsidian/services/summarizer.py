@@ -3,11 +3,10 @@ summarizer.py – Generates short semantic summaries of Markdown notes for vecto
 """
 
 import logging
-from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 
 from whisper2obsidian.config import settings
 from whisper2obsidian.services.llm_rate_limiter import get_rate_limiter
@@ -47,20 +46,23 @@ def summarize_note(content: str, max_chars: int = 500) -> str:
         return _fallback_summary(content, max_chars)
 
     prompt = f"""
-Summarize the following Obsidian note in a highly dense, semantic paragraph of NO MORE than {max_chars} characters.
-Focus entirely on the exact concepts, entities, and core meaning of the text. Do not include conversational filler like "This note is about".
+Summarize the following Obsidian note in a highly dense, semantic paragraph of NO MORE 
+than {max_chars} characters.
+Focus entirely on the exact concepts, entities, and core meaning of the text. Do not include 
+conversational filler like "This note is about".
 
 NOTE CONTENT:
 {content}
 """
     try:
-        # Approximate token cost for LLMRateLimiter 
+        # Approximate token cost for LLMRateLimiter
         estimated_tokens = len(prompt) // 4 + 100
-        
+
         provider = "cerebras" if settings.cerebras_api_key else "groq"
         rate_limiter = get_rate_limiter(provider)
-        
+
         import asyncio
+
         # We need to run await_capacity which is async inside a sync function.
         # This summarizer is technically sync because it uses invoke() and is called
         # from vector index mapping. If we're inside an asyncio loop we can handle this.
@@ -72,17 +74,20 @@ NOTE CONTENT:
             asyncio.run(rate_limiter.await_capacity(estimated_tokens))
 
         messages = [
-            SystemMessage(content="You are an expert summarizer. Generate extreme high-density semantic summaries."),
-            HumanMessage(content=prompt)
+            SystemMessage(
+                content="You are an expert summarizer. Generate extreme high-density "
+                "semantic summaries."
+            ),
+            HumanMessage(content=prompt),
         ]
-        
+
         # Some models fail if we don't control max_tokens
         response = llm.invoke(messages)
-        
+
         summary = str(response.content).strip()
         # Ensure it respects length just in case the LLM ignored instructions
         if len(summary) > max_chars + 100:
-             summary = summary[:max_chars] + "..."
+            summary = summary[:max_chars] + "..."
         return summary
 
     except Exception as e:

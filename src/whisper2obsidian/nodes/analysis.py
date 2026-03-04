@@ -22,12 +22,11 @@ import tiktoken
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 
 from whisper2obsidian.config import settings
 from whisper2obsidian.services.llm_rate_limiter import get_rate_limiter
 from whisper2obsidian.state import W2OState
-from whisper2obsidian.tools.vault_tools import search_similar_notes, get_known_tags
+from whisper2obsidian.tools.vault_tools import get_known_tags, search_similar_notes
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +60,14 @@ You have access to tools that can search for similar existing notes and retrieve
 You MUST use these tools if you need to find relevant notes to link to or appropriate tags to apply.
 
 Rules:
-- PERSPECTIVE: Write ALL text in the FIRST-PERSON ("I need to", "My idea is") as if YOU dictated this memo. NEVER use third-person ("The user wants", "The speaker").
-- tags: MUST BE AN EMPTY ARRAY `[]` unless the transcript explicitly discusses the exact subject. Do NOT invent abstract connections.
+- PERSPECTIVE: Write ALL text in the FIRST-PERSON ("I need to", "My idea is") as if YOU
+  dictated this memo. NEVER use third-person ("The user wants", "The speaker").
+- tags: MUST BE AN EMPTY ARRAY `[]` unless the transcript explicitly discusses the exact subject.
+  Do NOT invent abstract connections.
 - suggested_links: MUST BE AN EMPTY ARRAY `[]` unless directly, undeniably related.
-- EXPLICIT SPOKEN INSTRUCTIONS: I will often dictate metadata commands at the end of the memo (e.g. "Tag this with CSF", "Link to NotebookLM"). You MUST obey these instructions! If I dictate a tag or link, add it to the arrays, and exclude the command from the final text summary.
+- EXPLICIT SPOKEN INSTRUCTIONS: I will often dictate metadata commands at the end of the memo
+  (e.g. "Tag this with CSF", "Link to NotebookLM"). You MUST obey these instructions! If I dictate
+  a tag or link, add it to the arrays, and exclude the command from the final text summary.
 - mermaid_diagram: provide a Mermaid flowchart string ONLY for process/workflow memos, else null.
 - category_override: ONLY use one of these exact values if the transcript clearly belongs
   to a different category than the metadata claims, else null:
@@ -75,7 +78,8 @@ Rules:
 _CHUNK_SYSTEM_PROMPT = textwrap.dedent("""
 You are summarising a chunk of a longer voice memo transcript.
 Return ONLY a plain text summary of the key points in this chunk (no JSON).
-Be concise, preserve all important facts/names, and strictly use FIRST-PERSON ("I", "my") perspective.
+Be concise, preserve all important facts/names, and strictly use FIRST-PERSON ("I", "my")
+perspective.
 """).strip()
 
 _SYNTHESIS_PROMPT = textwrap.dedent("""
@@ -88,11 +92,13 @@ You have access to tools that can search for similar existing notes and retrieve
 You MUST use these tools if you need to find relevant notes to link to or appropriate tags to apply.
 
 Strictly maintain FIRST-PERSON ("I", "my") perspective.
-tags and suggested_links MUST BE AN EMPTY ARRAY `[]` unless they are undeniably, explicitly the core subject of the transcript. Do NOT invent connections.
+tags and suggested_links MUST BE AN EMPTY ARRAY `[]` unless they are undeniably, explicitly 
+the core subject of the transcript. Do NOT invent connections.
 """).strip()
 
 
 # ── Main node ────────────────────────────────────────────────────────────────
+
 
 def analysis_node(state: W2OState) -> W2OState:
     """Synchronous wrapper – runs the async analysis in an event loop."""
@@ -129,7 +135,7 @@ async def _analysis_async(state: W2OState) -> W2OState:
             api_key=settings.groq_api_key,
             temperature=0.3,
         )
-        
+
     rate_limiter = get_rate_limiter(provider)
 
     total_tokens_used = 0
@@ -143,9 +149,7 @@ async def _analysis_async(state: W2OState) -> W2OState:
         total_tokens_used = tokens
     else:
         # ── Chunked analysis ─────────────────────────────────────────────
-        logger.info(
-            "Transcript too long (%d tokens) – splitting into chunks", token_count
-        )
+        logger.info("Transcript too long (%d tokens) – splitting into chunks", token_count)
         analysis, tokens = await _analyse_chunked(
             llm, rate_limiter, transcript, existing_tags, existing_links, metadata
         )
@@ -167,6 +171,7 @@ async def _analysis_async(state: W2OState) -> W2OState:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 async def _analyse_single(
     llm: ChatGroq | ChatOpenAI,
     rate_limiter,
@@ -177,23 +182,20 @@ async def _analyse_single(
 ) -> tuple[dict, int]:
     # Construct base prompt
     user_content = _build_user_message(transcript, existing_tags, existing_links, metadata)
-    
+
     # Track tokens manually for local safety via limiters
     estimated = len(_enc.encode(user_content)) + 1200
     await rate_limiter.await_capacity(estimated)
 
     tools = [search_similar_notes, get_known_tags]
     llm_with_tools = llm.bind_tools(tools)
-    
-    messages = [
-        SystemMessage(content=_SYSTEM_PROMPT),
-        HumanMessage(content=user_content)
-    ]
+
+    messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user_content)]
 
     actual_tokens = 0
-    
+
     # Run a simple tool loop
-    for _ in range(3): # Max 3 tool iterations
+    for _ in range(3):  # Max 3 tool iterations
         try:
             resp = await llm_with_tools.ainvoke(messages)
             if resp.usage_metadata:
@@ -204,12 +206,12 @@ async def _analyse_single(
             if not resp.tool_calls:
                 # No more tools, final answer
                 break
-                
+
             for tool_call in resp.tool_calls:
                 logger.info(
-                    "[bold magenta]🛠️  Agent actively called tool: %s[/bold magenta]", 
-                    tool_call["name"], 
-                    extra={"markup": True}
+                    "[bold magenta]🛠️  Agent actively called tool: %s[/bold magenta]",
+                    tool_call["name"],
+                    extra={"markup": True},
                 )
                 if tool_call["name"] == "search_similar_notes":
                     tool_res = search_similar_notes.invoke(tool_call["args"])
@@ -218,10 +220,7 @@ async def _analyse_single(
                 else:
                     tool_res = f"Unknown tool {tool_call['name']}"
 
-                messages.append(ToolMessage(
-                    content=str(tool_res),
-                    tool_call_id=tool_call["id"]
-                ))
+                messages.append(ToolMessage(content=str(tool_res), tool_call_id=tool_call["id"]))
         except Exception as e:
             logger.error("LLM evaluation / tool call failed: %s", e)
             break
@@ -229,7 +228,7 @@ async def _analyse_single(
     # If the LLM stopped using tools but didn't output JSON cleanly, or if it hit iteration limit
     final_output = messages[-1].content
     raw = final_output.strip()
-    
+
     rate_limiter.record_usage(actual_tokens)
     return _safe_json(raw), actual_tokens
 
@@ -255,9 +254,7 @@ async def _analyse_chunked(
             [SystemMessage(content=_CHUNK_SYSTEM_PROMPT), HumanMessage(content=chunk)]
         )
         actual = (
-            resp.usage_metadata.get("total_tokens", estimated)
-            if resp.usage_metadata
-            else estimated
+            resp.usage_metadata.get("total_tokens", estimated) if resp.usage_metadata else estimated
         )
         rate_limiter.record_usage(actual)
         total_tokens += actual
@@ -271,15 +268,12 @@ async def _analyse_chunked(
 
     tools = [search_similar_notes, get_known_tags]
     llm_with_tools = llm.bind_tools(tools)
-    
-    messages = [
-        SystemMessage(content=_SYNTHESIS_PROMPT),
-        HumanMessage(content=synth_user)
-    ]
-    
+
+    messages = [SystemMessage(content=_SYNTHESIS_PROMPT), HumanMessage(content=synth_user)]
+
     actual_tokens = 0
     # Run a simple tool loop
-    for _ in range(3): # Max 3 tool iterations
+    for _ in range(3):  # Max 3 tool iterations
         try:
             resp = await llm_with_tools.ainvoke(messages)
             if resp.usage_metadata:
@@ -289,12 +283,12 @@ async def _analyse_chunked(
 
             if not getattr(resp, "tool_calls", None):
                 break
-                
+
             for tool_call in resp.tool_calls:
                 logger.info(
-                    "[bold magenta]🛠️  Agent actively called tool: %s[/bold magenta]", 
-                    tool_call["name"], 
-                    extra={"markup": True}
+                    "[bold magenta]🛠️  Agent actively called tool: %s[/bold magenta]",
+                    tool_call["name"],
+                    extra={"markup": True},
                 )
                 if tool_call["name"] == "search_similar_notes":
                     tool_res = search_similar_notes.invoke(tool_call["args"])
@@ -303,14 +297,11 @@ async def _analyse_chunked(
                 else:
                     tool_res = f"Unknown tool {tool_call['name']}"
 
-                messages.append(ToolMessage(
-                    content=str(tool_res),
-                    tool_call_id=tool_call["id"]
-                ))
+                messages.append(ToolMessage(content=str(tool_res), tool_call_id=tool_call["id"]))
         except Exception as e:
             logger.error("LLM synthesis evaluation / tool call failed: %s", e)
             break
-            
+
     rate_limiter.record_usage(actual_tokens)
     total_tokens += actual_tokens
 

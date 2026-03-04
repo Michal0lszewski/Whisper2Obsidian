@@ -43,10 +43,10 @@ class Settings(BaseSettings):
         "llama-3.3-70b-versatile",
         description="Groq model identifier",
     )
-    
+
     cerebras_api_key: str | None = Field(None, description="Cerebras API key")
     cerebras_model: str = Field(
-        "gpt-oss-120b", # "llama3.1-8b"
+        "gpt-oss-120b",  # "llama3.1-8b"
         description="Cerebras model identifier",
     )
 
